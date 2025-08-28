@@ -1,7 +1,7 @@
-import BuilderAgent
-import CoderAgent
-import CloudAgent
-import ThinkerAgent
-import WatcherAgent
+# from .BuilderAgent import agent as BuilderAgent
+# from .CoderAgent import agent as CoderAgent
+from .CloudAgent import agent as CloudAgent
+# from .ThinkerAgent import agent as ThinkerAgent
+# from .WatcherAgent import agent as WatcherAgent
 
-__all__ = ["BuilderAgent", "CoderAgent", "CloudAgent", "ThinkerAgent", "WatcherAgent"]
+__all__ = ["CloudAgent"]
