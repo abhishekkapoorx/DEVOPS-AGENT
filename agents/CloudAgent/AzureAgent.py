@@ -5,18 +5,18 @@ from langgraph.graph import StateGraph, START, END
 from typing import Annotated, List, TypedDict
 
 # States
-class AWSAgent(TypedDict):
+class AzureAgent(TypedDict):
 	messages: Annotated[List[str], add_messages]
 
 # Tools
 tools = []
 
 # Agent
-def agent_node(state: AWSAgent) -> AWSAgent:
+def agent_node(state: AzureAgent) -> AzureAgent:
 	return {"messages": [AIMessage(content="AzureAgent: Not implemented yet.")]}
 
 # Graph
-graph = StateGraph(AWSAgent, input_schema=AWSAgent, output_schema=AWSAgent)
+graph = StateGraph(AzureAgent, input_schema=AzureAgent, output_schema=AzureAgent)
 graph.add_node("agent", agent_node)
 graph.add_node("tools", ToolNode(tools))
 

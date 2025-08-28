@@ -5,18 +5,18 @@ from langgraph.graph import StateGraph, START, END
 from typing import Annotated, List, TypedDict
 
 # States
-class GCPAgent(TypedDict):
+class DockerAgent(TypedDict):
 	messages: Annotated[List[str], add_messages]
 
 # Tools
 tools = []
 
 # Agent
-def agent_node(state: GCPAgent) -> GCPAgent:
-	return {"messages": [AIMessage(content="GCPAgent: Not implemented yet.")]}
+def agent_node(state: DockerAgent) -> DockerAgent:
+	return {"messages": [AIMessage(content="DockerAgent: Not implemented yet.")]}
 
 # Graph
-graph = StateGraph(GCPAgent, input_schema=GCPAgent, output_schema=GCPAgent)
+graph = StateGraph(DockerAgent, input_schema=DockerAgent, output_schema=DockerAgent)
 graph.add_node("agent", agent_node)
 graph.add_node("tools", ToolNode(tools))
 
@@ -24,4 +24,4 @@ graph.add_edge(START, "agent")
 graph.add_conditional_edges("agent", tools_condition, "tools")
 graph.add_edge("tools", "agent")
 
-agent = graph.compile(name="gcp_agent")
+agent = graph.compile(name="docker_agent")
