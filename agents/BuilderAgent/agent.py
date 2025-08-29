@@ -6,7 +6,7 @@ from llms.groq_models import groq_models
 from .DockerAgent import agent as docker_agent
 from .K8sAgent import agent as k8s_agent
 
-supervisor = create_supervisor(
+agent = create_supervisor(
     name="builder_agent",
     model=groq_models["openai/gpt-oss-20b"],
     agents=[docker_agent, k8s_agent],

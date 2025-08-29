@@ -3,7 +3,7 @@ from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, create_react_agent, tools_condition
 from langgraph.graph import StateGraph, START, END
 from typing import Annotated, List, TypedDict
-from langchain.agents.agent_toolkits import FileManagementToolkit
+from langchain_community.agent_toolkits.file_management.toolkit import FileManagementToolkit
 from tempfile import TemporaryDirectory
 
 from llms.groq_models import groq_models
@@ -18,7 +18,7 @@ class AWSAgent(TypedDict):
 
 
 # Tools
-tools = FileManagementToolkit(root_dir=working_directory.name).get_tools()
+tools = FileManagementToolkit(root_dir="D:\\Projects\\DEVOPS-AGENT").get_tools()
 
 agent = create_react_agent(
     name="coder_agent",

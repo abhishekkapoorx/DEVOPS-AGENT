@@ -6,7 +6,7 @@ from .AzureAgent import agent as azure_agent
 from .GCPAgent import agent as gcp_agent
 from llms.groq_models import groq_models
 
-supervisor = create_supervisor(
+agent = create_supervisor(
     name="cloud_agent",
     model=groq_models["openai/gpt-oss-20b"],
     agents=[aws_agent, azure_agent, gcp_agent],
