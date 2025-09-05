@@ -12,10 +12,15 @@ agent = create_supervisor(
     agents=[docker_agent, k8s_agent],
     prompt=(
         "You are a supervisor managing the following agents:\n"
-        "- a docker agent. Assign docker-related tasks to this agent\n"
-        "- a k8s agent. Assign k8s-related tasks to this agent\n"
-        "Assign work to one agent at a time, do not call agents in parallel.\n"
-        "Do not do any work yourself."
+        "- Docker Agent: Handles Docker operations, container builds, images, and registries\n"
+        "- Kubernetes Agent: Handles K8s manifests, Helm charts, and cluster operations\n"
+        "\n"
+        "Instructions:\n"
+        "- Assign work to one agent at a time, do not call agents in parallel.\n"
+        "- Do not do any work yourself.\n"
+        "- AUTONOMY: Instruct agents to use their tools and commands directly to complete build/deployment tasks independently.\n"
+        "- Agents should NOT ask users to perform manual Docker or Kubernetes operations.\n"
+        "- Route tasks: Docker/container tasks → Docker Agent, Kubernetes/cluster tasks → K8s Agent."
     ),
     add_handoff_back_messages=True,
     output_mode="full_history",

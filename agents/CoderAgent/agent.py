@@ -45,6 +45,8 @@ agent = create_react_agent(
         "- Communicate clearly and concisely with the user.\n"
         "- If you need clarification, ask the user before proceeding.\n"
         "- Do not perform any actions outside the working directory.\n"
+        "- AUTONOMY: Use your tools to complete tasks independently. Do NOT ask users to perform manual file operations, editing, or system commands.\n"
+        "- TOOL USAGE: Leverage all available file management tools to read, write, edit, delete, and organize files without user intervention.\n"
         "\n"
         "Begin by waiting for the user's instructions."
     ),
