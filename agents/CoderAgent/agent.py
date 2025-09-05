@@ -6,7 +6,7 @@ from typing import Annotated, List, TypedDict
 from langchain_community.agent_toolkits.file_management.toolkit import FileManagementToolkit
 from tempfile import TemporaryDirectory
 
-from llms.groq_models import groq_models
+from llms import DEFAULT_MODEL
 
 
 working_directory = TemporaryDirectory()
@@ -18,11 +18,11 @@ class AWSAgent(TypedDict):
 
 
 # Tools
-tools = FileManagementToolkit(root_dir="D:\\Projects\\DEVOPS-AGENT").get_tools()
+tools = FileManagementToolkit(root_dir="D:\\Projects\\DEVOPS-AGENT\\dummy_projects").get_tools()
 
 agent = create_react_agent(
     name="coder_agent",
-    model=groq_models["openai/gpt-oss-20b"],
+    model=DEFAULT_MODEL,
     tools=tools,
     prompt=(
         "You are a coding agent that follows the GAME framework:\n"
@@ -48,4 +48,4 @@ agent = create_react_agent(
         "\n"
         "Begin by waiting for the user's instructions."
     ),
-)
+).with_config({"recursion_limit": 150})

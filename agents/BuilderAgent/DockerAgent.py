@@ -24,4 +24,4 @@ graph.add_edge(START, "agent")
 graph.add_conditional_edges("agent", tools_condition, "tools")
 graph.add_edge("tools", "agent")
 
-agent = graph.compile(name="docker_agent")
+agent = graph.compile(name="docker_agent").with_config({"recursion_limit": 150})

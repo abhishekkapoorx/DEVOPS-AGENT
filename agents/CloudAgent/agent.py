@@ -4,11 +4,11 @@ from langgraph_supervisor import create_supervisor
 from .AWSAgent import agent as aws_agent
 from .AzureAgent import agent as azure_agent
 from .GCPAgent import agent as gcp_agent
-from llms.groq_models import groq_models
+from llms import DEFAULT_MODEL
 
 agent = create_supervisor(
     name="cloud_agent",
-    model=groq_models["openai/gpt-oss-20b"],
+    model=DEFAULT_MODEL,
     agents=[aws_agent, azure_agent, gcp_agent],
     prompt=(
         "You are a supervisor managing the following agents:\n"
@@ -18,4 +18,4 @@ agent = create_supervisor(
     ),
     add_handoff_back_messages=True,
     output_mode="full_history",
-).compile(name="cloud_agent")
+).compile(name="cloud_agent").with_config({"recursion_limit": 150})

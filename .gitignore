@@ -9,6 +9,9 @@ __pycache__/
 # langgraph api
 .langgraph_api/
 
+# dummy_projects
+dummy_projects/
+
 # Distribution / packaging
 .Python
 build/

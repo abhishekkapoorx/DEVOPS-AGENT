@@ -1,14 +1,14 @@
 
 from langgraph_supervisor import create_supervisor
 
-from llms.groq_models import groq_models
+from llms import DEFAULT_MODEL
 
 from .DockerAgent import agent as docker_agent
 from .K8sAgent import agent as k8s_agent
 
 agent = create_supervisor(
     name="builder_agent",
-    model=groq_models["openai/gpt-oss-20b"],
+    model=DEFAULT_MODEL,
     agents=[docker_agent, k8s_agent],
     prompt=(
         "You are a supervisor managing the following agents:\n"
@@ -19,4 +19,4 @@ agent = create_supervisor(
     ),
     add_handoff_back_messages=True,
     output_mode="full_history",
-).compile(name="builder_agent")
+).compile(name="builder_agent").with_config({"recursion_limit": 150})
