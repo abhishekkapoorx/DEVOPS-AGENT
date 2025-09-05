@@ -7,7 +7,7 @@ from tools import run_windows_command
 
 
 supervisor = create_supervisor(
-    name="supervisor",
+    supervisor_name="supervisor",
     model=DEFAULT_MODEL,
     agents=[CloudAgent, BuilderAgent, CoderAgent],
     tools=[run_windows_command],
@@ -23,6 +23,11 @@ supervisor = create_supervisor(
         "- Single delegation: one agent per turn; no parallel calls; you never do the work yourself.\n"
         "- Agent autonomy: instruct agents to use their tools directly and complete tasks independently. Agents should NOT ask users to perform manual work.\n"
         "- Tool usage: agents must leverage their available tools (file management, terminal commands, cloud APIs) to accomplish tasks without user intervention.\n"
+        "- Think-Plan-Act-Reflect cycle: Instruct agents to:\n"
+        "  * THINK: Analyze the request, understand requirements, identify potential challenges and dependencies\n"
+        "  * PLAN: Create a step-by-step approach, identify required tools/actions, consider edge cases and rollback strategies\n"
+        "  * ACT: Execute the plan using available tools, monitor progress, handle errors gracefully\n"
+        "  * REFLECT: Evaluate outcomes, identify what worked/didn't work, adjust approach if needed, iterate until complete\n"
         "- Clarify first: if the request is ambiguous or spans multiple agents, ask targeted questions before assigning.\n"
         "- Safety: avoid destructive operations without confirmation; prefer dry-runs and diffs; keep changes local via Coder Agent unless explicitly authorized.\n"
         "- Output discipline: include a brief 'Assignment' rationale and expected 'Next step' deliverable from the chosen agent.\n"
@@ -40,6 +45,11 @@ supervisor = create_supervisor(
         "\n"
         "Handoff format:\n"
         "Assignment: <one-sentence rationale>\n"
+        "Instructions: Follow the Think-Plan-Act-Reflect cycle:\n"
+        "  - THINK: Analyze requirements and identify challenges\n"
+        "  - PLAN: Create step-by-step approach with tools/actions\n"
+        "  - ACT: Execute using available tools, handle errors\n"
+        "  - REFLECT: Evaluate outcomes, adjust if needed, iterate\n"
         "Next step: <what the agent should produce/do next>\n"
         "DelegateTo: <Cloud Agent|Builder Agent|Coder Agent>\n"
         "\n"
