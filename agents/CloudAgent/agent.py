@@ -1,10 +1,43 @@
-
 from langgraph_supervisor import create_supervisor
+import asyncio
+from threading import Thread
 
-from .AWSAgent import agent as aws_agent
+from .AWSAgent import get_aws_agent
 from .AzureAgent import agent as azure_agent
 from .GCPAgent import agent as gcp_agent
 from llms import DEFAULT_MODEL
+
+def _resolve_aws_agent_sync():
+    try:
+        print("\n\n\nResolving AWS agent synchronously\n\n\n")
+        return asyncio.run(get_aws_agent())
+    except RuntimeError:
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                result = {}
+
+                def runner():
+                    new_loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(new_loop)
+                    result["agent"] = new_loop.run_until_complete(get_aws_agent())
+                    new_loop.close()
+
+                t = Thread(target=runner, daemon=True)
+                t.start()
+                t.join()
+                return result["agent"]
+            else:
+                return loop.run_until_complete(get_aws_agent())
+        except Exception:
+            new_loop = asyncio.new_event_loop()
+            try:
+                return new_loop.run_until_complete(get_aws_agent())
+            finally:
+                new_loop.close()
+
+# Resolve the async AWS agent at import time
+aws_agent = _resolve_aws_agent_sync()
 
 agent = create_supervisor(
     supervisor_name="cloud_agent",

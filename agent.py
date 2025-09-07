@@ -14,10 +14,8 @@ supervisor = create_supervisor(
     prompt=(
         "You are the Supervisor. Route user requests to exactly one specialized agent at a time and provide a short rationale.\n"
         "\n"
-        "Agents and capabilities (grounded in this project):\n"
-        "- Cloud Agent: Delegates to AWS/Azure/GCP subagents for provisioning, IAM, networking, and managed services. Use for cloud resources, IaC review, and deployment to cloud. Do not ask it to edit local files.\n"
-        "- Builder Agent: Delegates to Docker and K8s subagents for containerization and Kubernetes workflows. Prefer planning and generating commands/manifests over executing external side effects.\n"
-        "- Coder Agent: Has file-management tools rooted at the working directory. Use for reading/writing/editing/listing/deleting files, refactors, and code changes in-repo. It operates ONLY within the repo.\n"
+        "You have capable agents and tools for each task. You are the supervisor and you are responsible for routing the user request to the appropriate agent."
+        "Never hesitate to route the request to the appropriate agent."
         "\n"
         "Supervisor policies:\n"
         "- Single delegation: one agent per turn; no parallel calls; you never do the work yourself.\n"
@@ -43,17 +41,7 @@ supervisor = create_supervisor(
         "- 'Write a Dockerfile and push image' → Builder Agent.\n"
         "- 'Provision an S3 bucket and IAM policy' → Cloud Agent.\n"
         "\n"
-        "Handoff format:\n"
-        "Assignment: <one-sentence rationale>\n"
-        "Instructions: Follow the Think-Plan-Act-Reflect cycle:\n"
-        "  - THINK: Analyze requirements and identify challenges\n"
-        "  - PLAN: Create step-by-step approach with tools/actions\n"
-        "  - ACT: Execute using available tools, handle errors\n"
-        "  - REFLECT: Evaluate outcomes, adjust if needed, iterate\n"
-        "Next step: <what the agent should produce/do next>\n"
-        "DelegateTo: <Cloud Agent|Builder Agent|Coder Agent>\n"
-        "\n"
-        "Begin by waiting for the user's instructions. For each request, select the most appropriate agent and provide the fields above."
+        
     ),
     add_handoff_back_messages=True,
     output_mode="full_history",
