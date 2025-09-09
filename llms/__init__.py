@@ -3,7 +3,8 @@ from .openai_models import openai_models
 from .gemini_models import gemini_models
 from .ollama_models import ollama_models
 
-DEFAULT_MODEL = groq_models["meta-llama/llama-4-scout-17b-16e-instruct"]
+# DEFAULT_MODEL = groq_models["meta-llama/llama-4-scout-17b-16e-instruct"]
 # DEFAULT_MODEL = ollama_models["gpt-oss:20b"]
+DEFAULT_MODEL = openai_models["gpt-3.5-turbo"]
 
 __all__ = ["groq_models", "openai_models", "gemini_models", "ollama_models", "DEFAULT_MODEL"]

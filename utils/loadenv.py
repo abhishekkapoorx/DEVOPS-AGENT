@@ -22,5 +22,5 @@ def _get_project_root_from_env() -> str:
         candidate = _sanitize_path(env_val)
         if os.path.isdir(candidate):
             return candidate
-    # Fallback to current working directory
-    return os.getcwd()
+    # Non-blocking fallback to current directory without calling os.getcwd()
+    return "."

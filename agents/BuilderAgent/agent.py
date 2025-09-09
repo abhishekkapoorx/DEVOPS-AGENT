@@ -2,13 +2,15 @@
 from langgraph_supervisor import create_supervisor
 
 from llms.groq_models import groq_models
+from llms.openai_models import openai_models
 
 from .DockerAgent import agent as docker_agent
 from .K8sAgent import agent as k8s_agent
 
 agent = create_supervisor(
     name="builder_agent",
-    model=groq_models["openai/gpt-oss-20b"],
+    # model=groq_models["openai/gpt-oss-20b"],4
+    model=openai_models["gpt-3.5-turbo"],
     agents=[docker_agent, k8s_agent],
     prompt=(
         "You are a Builder Agent Supervisor responsible for orchestrating containerization and orchestration tasks. "

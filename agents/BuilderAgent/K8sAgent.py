@@ -2,13 +2,15 @@ from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
 from langgraph.graph import StateGraph, START, END
-from typing import Annotated, List, TypedDict, Dict, Any
+from typing import Annotated, List, Dict, Any
+from typing_extensions import TypedDict
 from langchain_community.agent_toolkits.file_management.toolkit import FileManagementToolkit
 import os
 import json
+import asyncio
 
 from llms import openai_models, groq_models, gemini_models
-from tools import ManifestGenerator, HelmChartGenerator, ServiceGenerator
+from tools import generate_k8s_manifests, generate_helm_chart, generate_k8s_service
 
 # States
 class K8sAgent(TypedDict):
@@ -20,13 +22,13 @@ class K8sAgent(TypedDict):
 	output_directory: str
 
 # Tools
-root_dir = os.getcwd()
+root_dir = os.getenv("PROJECT_ROOT") or "."
 file_tools = FileManagementToolkit(root_dir=root_dir).get_tools()
 
 k8s_tools = [
-    ManifestGenerator(),
-    HelmChartGenerator(),
-    ServiceGenerator()
+    generate_k8s_manifests,
+    generate_helm_chart,
+    generate_k8s_service,
 ]
 
 all_tools = file_tools + k8s_tools
@@ -35,7 +37,7 @@ all_tools = file_tools + k8s_tools
 model = openai_models["gpt-4o-mini"]
 
 # Node Functions
-def analyze_requirements_node(state: K8sAgent) -> K8sAgent:
+async def analyze_requirements_node(state: K8sAgent) -> K8sAgent:
 	"""Analyze user requirements for Kubernetes deployment."""
 	last_message = state["messages"][-1] if state["messages"] else ""
 	user_requirements = last_message.content if hasattr(last_message, 'content') else str(last_message)
@@ -64,7 +66,7 @@ Provide a structured analysis in JSON format.
 """
 	
 	try:
-		response = model.invoke(prompt)
+		response = await model.ainvoke(prompt)
 		analysis = response.content.strip()
 		state["app_requirements"] = analysis
 		
@@ -80,7 +82,7 @@ Based on this analysis, I'll now generate the appropriate Kubernetes configurati
 		error_msg = f"Error analyzing requirements: {str(e)}"
 		return {"messages": [AIMessage(content=error_msg)]}
 
-def generate_manifests_node(state: K8sAgent) -> K8sAgent:
+async def generate_manifests_node(state: K8sAgent) -> K8sAgent:
 	"""Generate Kubernetes manifests using LLM."""
 	app_requirements = state.get("app_requirements", "{}")
 	user_requirements = state.get("user_requirements", "")
@@ -119,11 +121,11 @@ Generate each manifest as a separate YAML block with clear headers. Make them pr
 """
 	
 	try:
-		response = model.invoke(prompt)
+		response = await model.ainvoke(prompt)
 		manifests_content = response.content.strip()
 		
 		# Save manifests to files
-		os.makedirs(output_dir, exist_ok=True)
+		await asyncio.to_thread(os.makedirs, output_dir, True)
 		
 		# Parse and save individual manifests
 		manifests = manifests_content.split('---')
@@ -145,8 +147,7 @@ Generate each manifest as a separate YAML block with clear headers. Make them pr
 				filename = f"{name}-{kind.lower()}.yaml"
 				filepath = os.path.join(output_dir, filename)
 				
-				with open(filepath, 'w') as f:
-					f.write(manifest.strip())
+				await asyncio.to_thread(_write_text_file, filepath, manifest.strip())
 				
 				manifest_files.append(filepath)
 		
@@ -174,7 +175,7 @@ Generate each manifest as a separate YAML block with clear headers. Make them pr
 		error_msg = f"Error generating manifests: {str(e)}"
 		return {"messages": [AIMessage(content=error_msg)]}
 
-def generate_helm_chart_node(state: K8sAgent) -> K8sAgent:
+async def generate_helm_chart_node(state: K8sAgent) -> K8sAgent:
 	"""Generate Helm chart using LLM."""
 	app_requirements = state.get("app_requirements", "{}")
 	manifests_content = state.get("manifests_content", "")
@@ -217,13 +218,13 @@ Generate each file as a separate code block with clear headers.
 """
 	
 	try:
-		response = model.invoke(prompt)
+		response = await model.ainvoke(prompt)
 		helm_content = response.content.strip()
 		
 		# Save Helm chart structure
 		chart_dir = os.path.join(output_dir, "my-app")
 		templates_dir = os.path.join(chart_dir, "templates")
-		os.makedirs(templates_dir, exist_ok=True)
+		await asyncio.to_thread(os.makedirs, templates_dir, True)
 		
 		# Parse and save Helm chart files
 		sections = helm_content.split('```')
@@ -244,8 +245,7 @@ Generate each file as a separate code block with clear headers.
 				else:
 					continue
 				
-				with open(filepath, 'w') as f:
-					f.write(content)
+				await asyncio.to_thread(_write_text_file, filepath, content)
 				
 				chart_files.append(filepath)
 		
@@ -273,7 +273,7 @@ Generate each file as a separate code block with clear headers.
 		error_msg = f"Error generating Helm chart: {str(e)}"
 		return {"messages": [AIMessage(content=error_msg)]}
 
-def review_and_optimize_node(state: K8sAgent) -> K8sAgent:
+async def review_and_optimize_node(state: K8sAgent) -> K8sAgent:
 	"""Review and provide optimization recommendations."""
 	app_requirements = state.get("app_requirements", "{}")
 	manifests_content = state.get("manifests_content", "")
@@ -306,7 +306,7 @@ Provide a comprehensive review with specific recommendations and improvements.
 """
 	
 	try:
-		response = model.invoke(prompt)
+		response = await model.ainvoke(prompt)
 		review_content = response.content.strip()
 		
 		response_msg = f"""## Kubernetes Configuration Review & Optimization
@@ -373,3 +373,9 @@ graph.add_conditional_edges("helm", should_continue, {
 graph.add_edge("review", END)
 
 agent = graph.compile(name="k8s_agent")
+ 
+ 
+def _write_text_file(path: str, content: str) -> None:
+	"""Write text to file (blocking). Use via asyncio.to_thread to avoid blocking the event loop."""
+	with open(path, 'w') as f:
+		f.write(content)

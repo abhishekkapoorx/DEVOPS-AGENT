@@ -2,7 +2,8 @@ from langchain_core.messages import AIMessage
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, create_react_agent, tools_condition
 from langgraph.graph import StateGraph, START, END
-from typing import Annotated, List, TypedDict
+from typing import Annotated, List
+from typing_extensions import TypedDict
 from langchain_community.agent_toolkits.file_management.toolkit import FileManagementToolkit
 from tempfile import TemporaryDirectory
 
@@ -20,12 +21,14 @@ class AWSAgent(TypedDict):
 
 # Tools
 # tools = FileManagementToolkit(root_dir="D:\\Projects\\DEVOPS-AGENT").get_tools()
-tools = FileManagementToolkit(root_dir="C:/Users/Raghav Singla/Desktop/Internship/accounting-website").get_tools()
+# tools = FileManagementToolkit(root_dir="C:/Users/Raghav Singla/Desktop/Internship/accounting-website").get_tools()
+root_dir = r"C:\Users\Raghav Singla\Desktop\linux\pbl-agentic-deployment"
+tools = FileManagementToolkit(root_dir = root_dir).get_tools()
 
 agent = create_react_agent(
     name="coder_agent",
     # model=DEFAULT_MODEL,
-    model=openai_models["gpt-3.5-turbo"],
+    model=openai_models["gpt-4o-mini"],
     tools=tools,
     prompt=(
         "You are a coding agent that follows the GAME framework:\n"

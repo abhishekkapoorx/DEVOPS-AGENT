@@ -2,13 +2,15 @@ from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
 from langgraph.graph import StateGraph, START, END
-from typing import Annotated, List, TypedDict, Dict, Any
+from typing import Annotated, List, Dict, Any
+from typing_extensions import TypedDict
 from langchain_community.agent_toolkits.file_management.toolkit import FileManagementToolkit
 import os
 import json
+import asyncio
 
 from llms import openai_models, groq_models, gemini_models
-from tools import CodebaseAnalyzer, DockerfileGenerator, DockerComposeGenerator
+from tools import analyze_codebase, generate_dockerfile, generate_docker_compose
 from utils import _sanitize_path, _get_project_root_from_env
 
 # States
@@ -26,14 +28,15 @@ class DockerAgent(TypedDict):
 
 
 # Tools
-# Allow overriding the project root via env var; fallback to current working directory
-root_dir = _get_project_root_from_env()
+# Avoid blocking os.getcwd by preferring PROJECT_ROOT env or '.'
+# root_dir = os.getenv("PROJECT_ROOT") or "."
+root_dir = r"C:\Users\Raghav Singla\Desktop\linux\pbl-agentic-deployment"
 file_tools = FileManagementToolkit(root_dir=root_dir).get_tools()
 
 docker_tools = [
-    CodebaseAnalyzer(),
-    DockerfileGenerator(),
-    DockerComposeGenerator()
+    analyze_codebase,
+    generate_dockerfile,
+    generate_docker_compose,
 ]
 
 all_tools = file_tools + docker_tools
@@ -44,7 +47,7 @@ model = openai_models["gpt-4o-mini"]
 # Node Functions
 
 
-def analyze_codebase_node(state: DockerAgent) -> DockerAgent:
+async def analyze_codebase_node(state: DockerAgent) -> DockerAgent:
     """Analyze the codebase to understand the project structure."""
     last_message = state["messages"][-1] if state["messages"] else ""
 
@@ -57,9 +60,8 @@ def analyze_codebase_node(state: DockerAgent) -> DockerAgent:
         directory_path = os.path.join(project_root, directory_path)
     directory_path = _sanitize_path(directory_path)
 
-    # Use the CodebaseAnalyzer tool
-    analyzer = CodebaseAnalyzer()
-    analysis_result = analyzer._run(directory_path)
+    # Use the analyze_codebase tool function (async)
+    analysis_result = await analyze_codebase.ainvoke({"directory_path": directory_path})
 
     # Create response message and return updated state
     response = f"""I've analyzed your codebase. Here's what I found:
@@ -71,7 +73,7 @@ Based on this analysis, I'll now generate optimized Docker configurations for yo
     return {"messages": [AIMessage(content=response)], "analysis_result": analysis_result}
 
 
-def generate_dockerfile_node(state: DockerAgent) -> DockerAgent:
+async def generate_dockerfile_node(state: DockerAgent) -> DockerAgent:
     """Generate Dockerfile using LLM based on analysis."""
     analysis_result = state.get("analysis_result", "{}")
     user_requirements = state.get("user_requirements", "")
@@ -107,20 +109,18 @@ Generate ONLY the Dockerfile content, no explanations or markdown formatting. Ma
 """
 
     try:
-        response = model.invoke(prompt)
+        response = await model.ainvoke(prompt)
         dockerfile_content = response.content.strip()
 
-        # Save Dockerfile
+        # Save Dockerfile (offload blocking I/O)
         dockerfile_path = os.path.join(output_dir, "Dockerfile")
-        with open(dockerfile_path, 'w') as f:
-            f.write(dockerfile_content)
+        await asyncio.to_thread(_write_text_file, dockerfile_path, dockerfile_content)
 
         # Also generate a .dockerignore based on analysis
         dockerignore_path = os.path.join(output_dir, ".dockerignore")
         dockerignore_content = _generate_dockerignore_from_analysis(analysis_result)
         try:
-            with open(dockerignore_path, 'w') as f:
-                f.write(dockerignore_content)
+            await asyncio.to_thread(_write_text_file, dockerignore_path, dockerignore_content)
         except Exception:
             pass
 
@@ -147,7 +147,7 @@ Key features implemented:
         return {"messages": [AIMessage(content=error_msg)]}
 
 
-def generate_compose_node(state: DockerAgent) -> DockerAgent:
+async def generate_compose_node(state: DockerAgent) -> DockerAgent:
     """Generate docker-compose.yml using LLM based on analysis."""
     analysis_result = state.get("analysis_result", "{}")
     dockerfile_content = state.get("dockerfile_content", "")
@@ -187,13 +187,12 @@ Generate ONLY the docker-compose.yml content, no explanations or markdown format
 """
 
     try:
-        response = model.invoke(prompt)
+        response = await model.ainvoke(prompt)
         compose_content = response.content.strip()
 
-        # Save docker-compose.yml
+        # Save docker-compose.yml (offload blocking I/O)
         compose_path = os.path.join(output_dir, "docker-compose.yml")
-        with open(compose_path, 'w') as f:
-            f.write(compose_content)
+        await asyncio.to_thread(_write_text_file, compose_path, compose_content)
 
         response_msg = f"""I've generated a comprehensive docker-compose.yml file for your project:
 
@@ -218,7 +217,7 @@ Key features implemented:
         return {"messages": [AIMessage(content=error_msg)]}
 
 
-def review_and_optimize_node(state: DockerAgent) -> DockerAgent:
+async def review_and_optimize_node(state: DockerAgent) -> DockerAgent:
     """Review and provide optimization recommendations."""
     analysis_result = state.get("analysis_result", "{}")
     dockerfile_content = state.get("dockerfile_content", "")
@@ -250,7 +249,7 @@ Provide a comprehensive review with specific recommendations and improvements.
 """
 
     try:
-        response = model.invoke(prompt)
+        response = await model.ainvoke(prompt)
         review_content = response.content.strip()
 
         response_msg = f"""## Docker Configuration Review & Optimization
@@ -366,3 +365,9 @@ def _generate_dockerignore_from_analysis(analysis_json: str) -> str:
             seen.add(p)
             ordered.append(p)
     return "\n".join(ordered) + "\n"
+
+
+def _write_text_file(path: str, content: str) -> None:
+    """Write text to file (blocking). Use via asyncio.to_thread to avoid blocking the event loop."""
+    with open(path, 'w') as f:
+        f.write(content)

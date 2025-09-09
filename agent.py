@@ -9,7 +9,7 @@ from tools import run_windows_command
 supervisor = create_supervisor(
     supervisor_name="supervisor",
     # model=groq_models["openai/gpt-oss-20b"],
-    model=openai_models["gpt-3.5-turbo"],
+    model=openai_models["gpt-4o-mini"],
     agents=[CloudAgent, BuilderAgent, CoderAgent],
     tools=[run_windows_command],
     prompt=(
