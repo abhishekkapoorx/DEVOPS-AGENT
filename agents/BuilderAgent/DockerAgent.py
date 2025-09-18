@@ -9,7 +9,7 @@ import os
 import json
 import asyncio
 
-from llms import openai_models, groq_models, gemini_models
+from llms import DEFAULT_MODEL, openai_models, groq_models, gemini_models
 from tools import analyze_codebase, generate_dockerfile, generate_docker_compose
 from utils import _sanitize_path, _get_project_root_from_env
 
@@ -42,7 +42,7 @@ docker_tools = [
 all_tools = file_tools + docker_tools
 
 # Initialize LLM
-model = openai_models["gpt-4o-mini"]
+model = DEFAULT_MODEL
 
 # Node Functions
 
