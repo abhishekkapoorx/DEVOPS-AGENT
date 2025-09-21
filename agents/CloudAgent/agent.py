@@ -6,6 +6,11 @@ from .AWSAgent import get_aws_agent
 from .AzureAgent import agent as azure_agent
 from .GCPAgent import agent as gcp_agent
 from llms import DEFAULT_MODEL
+from tools.HandOffs.cloud import (
+    aws_agent_handoff,
+    azure_agent_handoff,
+    gcp_agent_handoff
+)
 
 CLOUD_AGENT_PROMPT = """
 Developer: You are a Supervisor agent tasked with overseeing and coordinating a set of specialized sub-agents, each responsible for a major cloud platform: AWS, Azure, and GCP. Your role is to efficiently manage these sub-agents to enable autonomous, multi-cloud operations without manual end-user intervention. Below is your operational framework and set of governance rules:
@@ -69,6 +74,11 @@ agent = create_supervisor(
     supervisor_name="cloud_agent",
     model=DEFAULT_MODEL,
     agents=[aws_agent, azure_agent, gcp_agent],
+    tools=[
+        aws_agent_handoff,
+        azure_agent_handoff,
+        gcp_agent_handoff
+    ],
     prompt=CLOUD_AGENT_PROMPT,
     add_handoff_back_messages=True,
     output_mode="full_history",

@@ -30,12 +30,6 @@ Instructions:
 """
 
 
-
-
-# Get the current directory for the MCP server path
-current_dir = Path(__file__).parent
-aws_mcp_server_path = current_dir / "aws_mcp_server.py"
-
 # MCP server configuration
 mcp_servers = {
     "awslabs.aws-api-mcp-server": {
@@ -71,7 +65,7 @@ class AWSMCPClient:
             self.agent = create_react_agent(
                 model=DEFAULT_MODEL,
                 tools=self.tools,
-                name="aws_agent_mcp",
+                name="aws_agent",
                 prompt=AWS_AGENT_PROMPT,
             )
 
@@ -83,7 +77,7 @@ class AWSMCPClient:
             self.agent = create_react_agent(
                 model=DEFAULT_MODEL,
                 tools=[],
-                name="aws_agent_fallback",
+                name="aws_agent",
                 prompt="""You are an AWS Cloud Agent, but AWS MCP tools are currently unavailable. 
                 
                     Please inform the user that AWS tools are not accessible and suggest they:
