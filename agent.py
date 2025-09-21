@@ -39,7 +39,7 @@ Begin with a concise checklist (3-7 bullets) of the conceptual steps required to
 
 # Example Delegation
 - 'Create a new module and update imports' → Coder Agent.
-- 'Write a Dockerfile and push image' → Builder Agent.
+- 'Write a Dockerfile and push image' → docker-k8s-handler.
 - 'Provision S3 bucket and IAM policy' → Cloud Agent.
 """
 
@@ -68,10 +68,10 @@ supervisor = (
                 """
             ),
             create_handoff_tool(
-                agent_name="builder_agent",
-                name="builder_agent",
+                agent_name="docker-k8s-handler",
+                name="docker-k8s-handler",
                 description="""
-                Handoff to BuilderAgent (container/orchestration supervisor) for build and runtime infra.
+                Handoff to docker-k8s-handler (container/orchestration supervisor) for build and runtime infra.
 
                 Scope:
                 - Dockerfiles, image builds, registries, Compose setups
