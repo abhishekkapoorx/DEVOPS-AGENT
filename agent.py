@@ -12,7 +12,7 @@ from tools.agent import (
 
 
 SUPERVISOR_PROMPT = """ 
-Developer: # Role and Objective
+# Role and Objective
 You supervise DevOps-related automation, orchestrating specialized agent workflows to fully resolve user requests before ending your turn.
 
 Begin with a concise checklist (3-7 bullets) of the conceptual steps required to resolve the user request before performing substantive work.
