@@ -1,14 +1,26 @@
 from langgraph.prebuilt import create_react_agent
 from langchain_community.agent_toolkits.file_management.toolkit import FileManagementToolkit
 
+from tempfile import TemporaryDirectory
+import os
 
 from llms import DEFAULT_MODEL
+from codebase_indexing.tools.agent_tools import create_agent_tools
 
 
 
 
 # Tools
-tools = FileManagementToolkit(root_dir="D:\\Projects\\DEVOPS-AGENT\\dummy_projects").get_tools()
+# file_tools = FileManagementToolkit(root_dir="D:\\Projects\\DEVOPS-AGENT\\dummy_projects").get_tools()
+file_tools = FileManagementToolkit(root_dir="C:\\Users\\Raghav Singla\\Desktop\\linux\\pbl-agentic-deployment").get_tools()
+
+# Get current working directory for indexing
+current_dir = os.getcwd()
+# indexing_tools = create_agent_tools(current_dir)
+
+# Combine all tools
+# tools = file_tools + indexing_tools
+tools = file_tools 
 
 agent = create_react_agent(
     name="coder_agent",

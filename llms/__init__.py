@@ -4,8 +4,8 @@ from .gemini_models import gemini_models
 from .ollama_models import ollama_models
 
 # DEFAULT_MODEL = groq_models["meta-llama/llama-4-scout-17b-16e-instruct"]
-# primary_model = openai_models["gpt-4o-mini"]
-primary_model = gemini_models["gemini-2.5-pro-deep-think"]
+primary_model = openai_models["gpt-4o-mini"]
+# primary_model = gemini_models["gemini-2.5-pro-deep-think"]
 DEFAULT_MODEL = primary_model.with_fallbacks(
     [
         # Most powerful models first
