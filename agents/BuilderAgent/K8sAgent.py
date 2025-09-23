@@ -10,7 +10,7 @@ import json
 import asyncio
 
 from llms import openai_models, groq_models, gemini_models
-from tools import generate_k8s_manifests, generate_helm_chart, generate_k8s_service
+from tools.AgentTools.k8s_tools import generate_k8s_manifests, generate_helm_chart, generate_k8s_service
 
 # States
 class K8sAgent(TypedDict):

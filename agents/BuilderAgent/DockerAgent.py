@@ -4,13 +4,19 @@ from langgraph.prebuilt import ToolNode, tools_condition
 from langgraph.graph import StateGraph, START, END
 from typing import Annotated, List, Dict, Any
 from typing_extensions import TypedDict
-from langchain_community.agent_toolkits.file_management.toolkit import FileManagementToolkit
+from langchain_community.agent_toolkits.file_management.toolkit import (
+    FileManagementToolkit,
+)
 import os
 import json
 import asyncio
 
 from llms import DEFAULT_MODEL, openai_models, groq_models, gemini_models
-from tools import analyze_codebase, generate_dockerfile, generate_docker_compose
+from tools.AgentTools.docker_tools import (
+    analyze_codebase,
+    generate_dockerfile,
+    generate_docker_compose,
+)
 from utils import _sanitize_path, _get_project_root_from_env
 
 # States
@@ -24,7 +30,6 @@ class DockerAgent(TypedDict):
     user_requirements: str
     output_directory: str
     project_root: str
-
 
 
 # Tools
@@ -52,7 +57,9 @@ async def analyze_codebase_node(state: DockerAgent) -> DockerAgent:
     last_message = state["messages"][-1] if state["messages"] else ""
 
     # Determine project root and directory to analyze
-    project_root = _sanitize_path(state.get("project_root", _get_project_root_from_env()))
+    project_root = _sanitize_path(
+        state.get("project_root", _get_project_root_from_env())
+    )
     directory_path = state.get("output_directory", project_root)
     if directory_path in (".", "./", ""):
         directory_path = project_root
@@ -70,14 +77,19 @@ async def analyze_codebase_node(state: DockerAgent) -> DockerAgent:
 
 Based on this analysis, I'll now generate optimized Docker configurations for your project."""
 
-    return {"messages": [AIMessage(content=response)], "analysis_result": analysis_result}
+    return {
+        "messages": [AIMessage(content=response)],
+        "analysis_result": analysis_result,
+    }
 
 
 async def generate_dockerfile_node(state: DockerAgent) -> DockerAgent:
     """Generate Dockerfile using LLM based on analysis."""
     analysis_result = state.get("analysis_result", "{}")
     user_requirements = state.get("user_requirements", "")
-    project_root = _sanitize_path(state.get("project_root", _get_project_root_from_env()))
+    project_root = _sanitize_path(
+        state.get("project_root", _get_project_root_from_env())
+    )
     output_dir = state.get("output_directory", project_root)
     if output_dir in (".", "./", ""):
         output_dir = project_root
@@ -120,7 +132,9 @@ Generate ONLY the Dockerfile content, no explanations or markdown formatting. Ma
         dockerignore_path = os.path.join(output_dir, ".dockerignore")
         dockerignore_content = _generate_dockerignore_from_analysis(analysis_result)
         try:
-            await asyncio.to_thread(_write_text_file, dockerignore_path, dockerignore_content)
+            await asyncio.to_thread(
+                _write_text_file, dockerignore_path, dockerignore_content
+            )
         except Exception:
             pass
 
@@ -140,7 +154,10 @@ Key features implemented:
 - Optimized for your detected technology stack
 - Production-ready configuration"""
 
-        return {"messages": [AIMessage(content=response_msg)], "dockerfile_content": dockerfile_content}
+        return {
+            "messages": [AIMessage(content=response_msg)],
+            "dockerfile_content": dockerfile_content,
+        }
 
     except Exception as e:
         error_msg = f"Error generating Dockerfile: {str(e)}"
@@ -152,7 +169,9 @@ async def generate_compose_node(state: DockerAgent) -> DockerAgent:
     analysis_result = state.get("analysis_result", "{}")
     dockerfile_content = state.get("dockerfile_content", "")
     user_requirements = state.get("user_requirements", "")
-    project_root = _sanitize_path(state.get("project_root", _get_project_root_from_env()))
+    project_root = _sanitize_path(
+        state.get("project_root", _get_project_root_from_env())
+    )
     output_dir = state.get("output_directory", project_root)
     if output_dir in (".", "./", ""):
         output_dir = project_root
@@ -210,7 +229,10 @@ Key features implemented:
 - Production-ready configuration
 - Service dependencies and ordering"""
 
-        return {"messages": [AIMessage(content=response_msg)], "compose_content": compose_content}
+        return {
+            "messages": [AIMessage(content=response_msg)],
+            "compose_content": compose_content,
+        }
 
     except Exception as e:
         error_msg = f"Error generating docker-compose.yml: {str(e)}"
@@ -294,8 +316,7 @@ def should_continue(state: DockerAgent) -> str:
 
 
 # Graph
-graph = StateGraph(DockerAgent, input_schema=DockerAgent,
-                   output_schema=DockerAgent)
+graph = StateGraph(DockerAgent, input_schema=DockerAgent, output_schema=DockerAgent)
 
 # Add nodes
 graph.add_node("analyze", analyze_codebase_node)
@@ -305,18 +326,15 @@ graph.add_node("review", review_and_optimize_node)
 
 # Add edges
 graph.add_edge(START, "analyze")
-graph.add_conditional_edges("analyze", should_continue, {
-    "dockerfile": "dockerfile",
-    "compose": "compose",
-    "review": "review"
-})
-graph.add_conditional_edges("dockerfile", should_continue, {
-    "compose": "compose",
-    "review": "review"
-})
-graph.add_conditional_edges("compose", should_continue, {
-    "review": "review"
-})
+graph.add_conditional_edges(
+    "analyze",
+    should_continue,
+    {"dockerfile": "dockerfile", "compose": "compose", "review": "review"},
+)
+graph.add_conditional_edges(
+    "dockerfile", should_continue, {"compose": "compose", "review": "review"}
+)
+graph.add_conditional_edges("compose", should_continue, {"review": "review"})
 graph.add_edge("review", END)
 
 agent = graph.compile(name="docker_agent").with_config({"recursion_limit": 150})
@@ -369,5 +387,5 @@ def _generate_dockerignore_from_analysis(analysis_json: str) -> str:
 
 def _write_text_file(path: str, content: str) -> None:
     """Write text to file (blocking). Use via asyncio.to_thread to avoid blocking the event loop."""
-    with open(path, 'w') as f:
+    with open(path, "w") as f:
         f.write(content)
