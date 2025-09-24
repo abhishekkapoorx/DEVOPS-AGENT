@@ -4,7 +4,7 @@ from threading import Thread
 
 from .AWSAgent import get_aws_agent
 from .AzureAgent import agent as azure_agent
-from .GCPAgent import agent as gcp_agent
+from .GCPAgent import get_gcp_agent
 from llms import DEFAULT_MODEL
 from tools.HandOffs.cloud import (
     aws_agent_handoff,
@@ -38,10 +38,10 @@ Examples:
 Your overarching objective is to orchestrate efficient, secure, and fully automated multi-cloud management with no manual intervention, maximizing operational effectiveness and compliance across all managed platforms.
 """
 
-def _resolve_aws_agent_sync():
+def _resolve_agent_sync(async_agent):
     try:
-        print("\n\n\nResolving AWS agent synchronously\n\n\n")
-        return asyncio.run(get_aws_agent())
+        print(f"\n\n\nResolving agent synchronously {async_agent.__name__}\n\n\n")
+        return asyncio.run(async_agent())
     except RuntimeError:
         try:
             loop = asyncio.get_event_loop()
@@ -51,7 +51,7 @@ def _resolve_aws_agent_sync():
                 def runner():
                     new_loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(new_loop)
-                    result["agent"] = new_loop.run_until_complete(get_aws_agent())
+                    result["agent"] = new_loop.run_until_complete(async_agent())
                     new_loop.close()
 
                 t = Thread(target=runner, daemon=True)
@@ -59,21 +59,23 @@ def _resolve_aws_agent_sync():
                 t.join()
                 return result["agent"]
             else:
-                return loop.run_until_complete(get_aws_agent())
+                return loop.run_until_complete(async_agent())
         except Exception:
             new_loop = asyncio.new_event_loop()
             try:
-                return new_loop.run_until_complete(get_aws_agent())
+                return new_loop.run_until_complete(async_agent())
             finally:
                 new_loop.close()
 
 # Resolve the async AWS agent at import time
-aws_agent = _resolve_aws_agent_sync()
+aws_agent = _resolve_agent_sync(get_aws_agent)
+# azure_agent = _resolve_agent_sync(get_azure_agent)
+gcp_agent = _resolve_agent_sync(get_gcp_agent)
 
 agent = create_supervisor(
     supervisor_name="cloud_agent",
     model=DEFAULT_MODEL,
-    agents=[aws_agent, azure_agent, gcp_agent],
+    agents=[aws_agent, gcp_agent, azure_agent],
     tools=[
         aws_agent_handoff,
         azure_agent_handoff,
