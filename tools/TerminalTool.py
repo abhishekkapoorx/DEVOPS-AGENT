@@ -1,6 +1,11 @@
 import subprocess
 from langchain_core.tools import tool
 
+from langchain_community.tools.shell.tool import ShellTool
+
+shell_tool = ShellTool()
+
+
 @tool
 def run_windows_command(command: str) -> str:
     """Execute a Windows command and return the output.
