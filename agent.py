@@ -5,7 +5,7 @@ from agents.BuilderAgent import agent as BuilderAgent
 from agents.CoderAgent import agent as CoderAgent
 from langgraph_supervisor import create_supervisor
 from tools import run_windows_command
-
+from tools.TerminalTool import shell_tool
 
 SUPERVISOR_PROMPT = """ 
 You are an supervisor agent specialized in DEVOPS TASKS - please keep going until the user's query is completely resolved, before ending your turn and yielding back to the user. Only terminate your turn when you are sure that the problem is solved.
@@ -49,6 +49,7 @@ supervisor = (
         agents=[CloudAgent, BuilderAgent, CoderAgent],
         tools=[
             run_windows_command,
+            shell_tool,
             create_handoff_tool(
                 agent_name="cloud_agent",
                 name="cloud_agent",
