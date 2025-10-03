@@ -656,3 +656,308 @@ def generate_k8s_service(service_name: str, service_type: str, port: int, target
         return f"Kubernetes service manifest generated successfully at {output_path}"
     except Exception as e:
         return f"Error generating Kubernetes service: {str(e)}"
+
+
+class K8sRequirementsAnalysisInput(BaseModel):
+    """Input for Kubernetes requirements analysis."""
+    user_requirements: str = Field(description="User requirements for Kubernetes deployment")
+
+
+@tool("analyze_k8s_requirements", args_schema=K8sRequirementsAnalysisInput)
+def analyze_k8s_requirements(user_requirements: str) -> str:
+    """Analyze user requirements for Kubernetes deployment and extract key information."""
+    try:
+        # Lazy import to avoid circular dependencies
+        from llms import openai_models
+        model = openai_models["gpt-4o-mini"]
+        
+        prompt = f"""
+You are a Kubernetes expert. Analyze the following user requirements and extract key information for Kubernetes deployment:
+
+**User Requirements:**
+{user_requirements}
+
+**Extract and provide:**
+1. Application type (web, api, database, microservice, etc.)
+2. Expected traffic and scaling requirements
+3. Resource requirements (CPU, memory)
+4. Environment (development, staging, production)
+5. Dependencies (databases, external services)
+6. Security requirements
+7. Monitoring and logging needs
+8. Deployment preferences (manifests vs Helm charts)
+
+Provide a structured analysis in JSON format.
+"""
+        
+        response = model.invoke(prompt)
+        return response.content.strip()
+        
+    except Exception as e:
+        return f"Error analyzing requirements: {str(e)}"
+
+
+class K8sManifestsGenerationInput(BaseModel):
+    """Input for Kubernetes manifests generation using LLM."""
+    app_requirements: str = Field(description="Application requirements analysis")
+    user_requirements: str = Field(description="Original user requirements")
+    output_directory: str = Field(default="./k8s", description="Output directory for manifests")
+
+
+@tool("generate_k8s_manifests_with_llm", args_schema=K8sManifestsGenerationInput)
+def generate_k8s_manifests_with_llm(app_requirements: str, user_requirements: str, output_directory: str = "./k8s") -> str:
+    """Generate comprehensive Kubernetes manifests using LLM based on requirements analysis."""
+    try:
+        # Lazy import to avoid circular dependencies
+        from llms import openai_models
+        model = openai_models["gpt-4o-mini"]
+        
+        prompt = f"""
+You are a Kubernetes expert. Generate comprehensive Kubernetes manifests based on the following requirements:
+
+**Application Requirements Analysis:**
+{app_requirements}
+
+**User Requirements:**
+{user_requirements}
+
+**Generate the following manifests:**
+1. Deployment with proper resource limits, health checks, and security contexts
+2. Service for internal communication
+3. ConfigMap for configuration management
+4. Ingress for external access
+5. HorizontalPodAutoscaler for auto-scaling
+6. ServiceAccount with minimal permissions
+7. NetworkPolicy for security (if needed)
+
+**Requirements:**
+- Use production-ready configurations
+- Implement security best practices
+- Include proper resource requests and limits
+- Add health checks and probes
+- Use non-root users and read-only filesystems
+- Implement proper labeling and selectors
+- Configure auto-scaling appropriately
+- Include monitoring and logging annotations
+
+Generate each manifest as a separate YAML block with clear headers. Make them production-ready and secure.
+"""
+        
+        response = model.invoke(prompt)
+        manifests_content = response.content.strip()
+        
+        # Save manifests to files
+        os.makedirs(output_directory, exist_ok=True)
+        
+        # Parse and save individual manifests
+        manifests = manifests_content.split('---')
+        manifest_files = []
+        
+        for i, manifest in enumerate(manifests):
+            if manifest.strip():
+                # Extract kind from manifest
+                lines = manifest.strip().split('\n')
+                kind = "unknown"
+                name = f"manifest-{i}"
+                
+                for line in lines:
+                    if line.strip().startswith('kind:'):
+                        kind = line.split(':')[1].strip()
+                    elif line.strip().startswith('name:'):
+                        name = line.split(':')[1].strip()
+                
+                filename = f"{name}-{kind.lower()}.yaml"
+                filepath = os.path.join(output_directory, filename)
+                
+                with open(filepath, 'w') as f:
+                    f.write(manifest.strip())
+                
+                manifest_files.append(filepath)
+        
+        result = f"""Generated comprehensive Kubernetes manifests:
+
+{manifests_content}
+
+Generated files:
+{chr(10).join(f"- {f}" for f in manifest_files)}
+
+Key features implemented:
+- Production-ready deployment with security contexts
+- Auto-scaling with HPA
+- Proper resource management
+- Health checks and probes
+- Network policies for security
+- Service account with minimal permissions
+- Ingress configuration for external access"""
+        
+        return result
+        
+    except Exception as e:
+        return f"Error generating manifests: {str(e)}"
+
+
+class HelmChartGenerationInput(BaseModel):
+    """Input for Helm chart generation using LLM."""
+    app_requirements: str = Field(description="Application requirements analysis")
+    manifests_content: str = Field(description="Generated manifests content")
+    user_requirements: str = Field(description="Original user requirements")
+    output_directory: str = Field(default="./helm-chart", description="Output directory for Helm chart")
+
+
+@tool("generate_helm_chart_with_llm", args_schema=HelmChartGenerationInput)
+def generate_helm_chart_with_llm(app_requirements: str, manifests_content: str, user_requirements: str, output_directory: str = "./helm-chart") -> str:
+    """Generate a complete Helm chart using LLM based on requirements and manifests."""
+    try:
+        # Lazy import to avoid circular dependencies
+        from llms import openai_models
+        model = openai_models["gpt-4o-mini"]
+        
+        prompt = f"""
+You are a Helm expert. Generate a complete Helm chart based on the following information:
+
+**Application Requirements:**
+{app_requirements}
+
+**Generated Manifests:**
+{manifests_content}
+
+**User Requirements:**
+{user_requirements}
+
+**Generate a complete Helm chart with:**
+1. Chart.yaml with proper metadata
+2. values.yaml with configurable parameters
+3. templates/deployment.yaml
+4. templates/service.yaml
+5. templates/ingress.yaml
+6. templates/hpa.yaml
+7. templates/configmap.yaml
+8. templates/serviceaccount.yaml
+9. templates/NOTES.txt with deployment instructions
+
+**Requirements:**
+- Make all values configurable through values.yaml
+- Use Helm templating best practices
+- Include proper conditionals and loops
+- Add validation and error handling
+- Include comprehensive values.yaml with comments
+- Make it production-ready and secure
+
+Generate each file as a separate code block with clear headers.
+"""
+        
+        response = model.invoke(prompt)
+        helm_content = response.content.strip()
+        
+        # Save Helm chart structure
+        chart_dir = os.path.join(output_directory, "my-app")
+        templates_dir = os.path.join(chart_dir, "templates")
+        os.makedirs(templates_dir, exist_ok=True)
+        
+        # Parse and save Helm chart files
+        sections = helm_content.split('```')
+        chart_files = []
+        
+        for i in range(1, len(sections), 2):
+            if i < len(sections):
+                header = sections[i-1].strip()
+                content = sections[i].strip()
+                
+                if 'Chart.yaml' in header:
+                    filepath = os.path.join(chart_dir, "Chart.yaml")
+                elif 'values.yaml' in header:
+                    filepath = os.path.join(chart_dir, "values.yaml")
+                elif 'templates/' in header:
+                    filename = header.split('/')[-1].strip()
+                    filepath = os.path.join(templates_dir, filename)
+                else:
+                    continue
+                
+                with open(filepath, 'w') as f:
+                    f.write(content)
+                
+                chart_files.append(filepath)
+        
+        result = f"""Generated complete Helm chart:
+
+{helm_content}
+
+Generated files:
+{chr(10).join(f"- {f}" for f in chart_files)}
+
+Key features implemented:
+- Complete Helm chart structure
+- Configurable values.yaml
+- Production-ready templates
+- Proper Helm templating
+- Security best practices
+- Auto-scaling configuration
+- Comprehensive deployment notes"""
+        
+        return result
+        
+    except Exception as e:
+        return f"Error generating Helm chart: {str(e)}"
+
+
+class K8sReviewInput(BaseModel):
+    """Input for Kubernetes configuration review."""
+    app_requirements: str = Field(description="Application requirements analysis")
+    manifests_content: str = Field(description="Generated manifests content")
+    helm_chart_content: str = Field(description="Generated Helm chart content")
+
+
+@tool("review_k8s_configuration", args_schema=K8sReviewInput)
+def review_k8s_configuration(app_requirements: str, manifests_content: str, helm_chart_content: str) -> str:
+    """Review Kubernetes configurations and provide optimization recommendations."""
+    try:
+        # Lazy import to avoid circular dependencies
+        from llms import openai_models
+        model = openai_models["gpt-4o-mini"]
+        
+        prompt = f"""
+You are a Kubernetes expert reviewer. Review the following Kubernetes configurations and provide optimization recommendations:
+
+**Application Requirements:**
+{app_requirements}
+
+**Generated Manifests:**
+{manifests_content}
+
+**Generated Helm Chart:**
+{helm_chart_content}
+
+**Review Requirements:**
+1. Check for security vulnerabilities and best practices
+2. Identify performance optimization opportunities
+3. Suggest resource optimization improvements
+4. Recommend monitoring and observability setup
+5. Provide deployment and scaling strategies
+6. Suggest CI/CD integration approaches
+7. Recommend backup and disaster recovery strategies
+8. Provide troubleshooting and debugging guidance
+
+Provide a comprehensive review with specific recommendations and improvements.
+"""
+        
+        response = model.invoke(prompt)
+        review_content = response.content.strip()
+        
+        result = f"""## Kubernetes Configuration Review & Optimization
+
+{review_content}
+
+## Next Steps:
+1. Review the generated manifests and Helm chart
+2. Test with `kubectl apply -f k8s/` or `helm install my-app ./helm-chart/my-app`
+3. Implement the suggested optimizations
+4. Set up monitoring and logging as recommended
+5. Configure CI/CD pipeline for automated deployments
+6. Implement backup and disaster recovery strategies
+
+Your Kubernetes setup is now ready for production deployment!"""
+        
+        return result
+        
+    except Exception as e:
+        return f"Error during review: {str(e)}"

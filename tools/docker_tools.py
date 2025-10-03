@@ -463,3 +463,258 @@ def generate_docker_compose(analysis_result: str, output_path: str, environment:
         return f"docker-compose.yml generated successfully at {output_path}"
     except Exception as e:
         return f"Error generating docker-compose.yml: {str(e)}"
+
+
+class DockerfileLLMGenerationInput(BaseModel):
+    """Input for Dockerfile generation using LLM."""
+    analysis_result: str = Field(description="JSON string of codebase analysis results")
+    user_requirements: str = Field(description="User requirements for Docker setup")
+    output_path: str = Field(description="Path where to save the generated Dockerfile")
+    optimization_level: str = Field(default="production", description="Optimization level: development, production, or minimal")
+
+
+@tool("generate_dockerfile_with_llm", args_schema=DockerfileLLMGenerationInput)
+def generate_dockerfile_with_llm(analysis_result: str, user_requirements: str, output_path: str, optimization_level: str = "production") -> str:
+    """Generate a production-ready Dockerfile using LLM based on analysis and user requirements."""
+    try:
+        analysis = json.loads(analysis_result)
+        
+        # Lazy import to avoid circular dependencies
+        from llms import openai_models
+        model = openai_models["gpt-4o-mini"]
+        
+        prompt = f"""
+You are a Docker expert. Generate a production-ready Dockerfile based on the following information:
+
+**Codebase Analysis:**
+{analysis_result}
+
+**User Requirements:**
+{user_requirements}
+
+**Requirements:**
+1. Use multi-stage builds for production optimization
+2. Implement security best practices: non-root user, minimal final image, drop unnecessary packages
+3. Avoid installing curl/wget in the final image; for health checks, prefer runtime stdlib (e.g., Python urllib) or omit if none available
+4. Prefer up-to-date minimal bases (e.g., python:3.11-slim-bookworm or distroless where feasible); do not use deprecated/EOL images
+5. Optimize for the detected language/framework and follow best practices for layer caching
+6. Include proper error handling and logging where applicable
+7. Do NOT include .dockerignore content; it will be created separately
+8. Optimize for the specified environment
+
+Generate ONLY the Dockerfile content, no explanations or markdown formatting. Make it production-ready and secure.
+"""
+        
+        response = model.invoke(prompt)
+        dockerfile_content = response.content.strip()
+        
+        # Save Dockerfile
+        with open(output_path, 'w') as f:
+            f.write(dockerfile_content)
+        
+        # Also generate a .dockerignore based on analysis
+        dockerignore_path = output_path.replace('Dockerfile', '.dockerignore')
+        dockerignore_content = _generate_dockerignore_from_analysis(analysis_result)
+        try:
+            with open(dockerignore_path, 'w') as f:
+                f.write(dockerignore_content)
+        except Exception:
+            pass
+        
+        result = f"""Generated production-ready Dockerfile:
+
+```dockerfile
+{dockerfile_content}
+```
+
+Dockerfile saved to: {output_path}
+Also created .dockerignore at: {dockerignore_path}
+
+Key features implemented:
+- Multi-stage build for optimization
+- Security best practices (non-root user)
+- Health checks and proper port exposure
+- Optimized for your detected technology stack
+- Production-ready configuration"""
+        
+        return result
+        
+    except Exception as e:
+        return f"Error generating Dockerfile: {str(e)}"
+
+
+class DockerComposeLLMGenerationInput(BaseModel):
+    """Input for Docker Compose generation using LLM."""
+    analysis_result: str = Field(description="JSON string of codebase analysis results")
+    dockerfile_content: str = Field(description="Generated Dockerfile content")
+    user_requirements: str = Field(description="User requirements for Docker setup")
+    output_path: str = Field(description="Path where to save the generated docker-compose.yml")
+    environment: str = Field(default="development", description="Environment: development, staging, or production")
+
+
+@tool("generate_docker_compose_with_llm", args_schema=DockerComposeLLMGenerationInput)
+def generate_docker_compose_with_llm(analysis_result: str, dockerfile_content: str, user_requirements: str, output_path: str, environment: str = "development") -> str:
+    """Generate a comprehensive docker-compose.yml file using LLM based on analysis, Dockerfile, and user requirements."""
+    try:
+        # Lazy import to avoid circular dependencies
+        from llms import openai_models
+        model = openai_models["gpt-4o-mini"]
+        
+        prompt = f"""
+You are a Docker Compose expert. Generate a production-ready docker-compose.yml file based on the following information:
+
+**Codebase Analysis:**
+{analysis_result}
+
+**Generated Dockerfile:**
+{dockerfile_content}
+
+**User Requirements:**
+{user_requirements}
+
+**Requirements:**
+1. Create appropriate services for the application
+2. Include necessary databases and dependencies
+3. Configure proper networking and volumes
+4. Set up environment variables
+5. Include health checks and restart policies
+6. Optimize for production deployment
+7. Include development and production configurations
+8. Add proper service dependencies
+
+Generate ONLY the docker-compose.yml content, no explanations or markdown formatting. Make it production-ready.
+"""
+        
+        response = model.invoke(prompt)
+        compose_content = response.content.strip()
+        
+        # Save docker-compose.yml
+        with open(output_path, 'w') as f:
+            f.write(compose_content)
+        
+        result = f"""Generated comprehensive docker-compose.yml:
+
+```yaml
+{compose_content}
+```
+
+docker-compose.yml saved to: {output_path}
+
+Key features implemented:
+- Multi-service architecture
+- Proper networking and volumes
+- Environment variable configuration
+- Health checks and restart policies
+- Production-ready configuration
+- Service dependencies and ordering"""
+        
+        return result
+        
+    except Exception as e:
+        return f"Error generating docker-compose.yml: {str(e)}"
+
+
+class DockerReviewInput(BaseModel):
+    """Input for Docker configuration review."""
+    analysis_result: str = Field(description="Codebase analysis results")
+    dockerfile_content: str = Field(description="Generated Dockerfile content")
+    compose_content: str = Field(description="Generated docker-compose.yml content")
+
+
+@tool("review_docker_configuration", args_schema=DockerReviewInput)
+def review_docker_configuration(analysis_result: str, dockerfile_content: str, compose_content: str) -> str:
+    """Review Docker configurations and provide optimization recommendations."""
+    try:
+        # Lazy import to avoid circular dependencies
+        from llms import openai_models
+        model = openai_models["gpt-4o-mini"]
+        
+        prompt = f"""
+You are a Docker expert reviewer. Review the following Docker configurations and provide optimization recommendations:
+
+**Codebase Analysis:**
+{analysis_result}
+
+**Generated Dockerfile:**
+{dockerfile_content}
+
+**Generated docker-compose.yml:**
+{compose_content}
+
+**Review Requirements:**
+1. Check for security vulnerabilities
+2. Identify performance optimization opportunities
+3. Suggest best practices improvements
+4. Recommend monitoring and logging setup
+5. Provide deployment instructions
+6. Suggest .dockerignore file content
+7. Recommend CI/CD integration steps
+
+Provide a comprehensive review with specific recommendations and improvements.
+"""
+        
+        response = model.invoke(prompt)
+        review_content = response.content.strip()
+        
+        result = f"""## Docker Configuration Review & Optimization
+
+{review_content}
+
+## Next Steps:
+1. Review the generated files in your output directory
+2. Test the configurations with `docker-compose up --build`
+3. Implement the suggested optimizations
+4. Set up monitoring and logging as recommended
+5. Integrate with your CI/CD pipeline
+
+Your Docker setup is now ready for production deployment!"""
+        
+        return result
+        
+    except Exception as e:
+        return f"Error during review: {str(e)}"
+
+
+def _generate_dockerignore_from_analysis(analysis_json: str) -> str:
+    """Generate a reasonable .dockerignore from analysis results."""
+    # Base ignores common to most projects
+    patterns = [
+        "__pycache__/",
+        "*.pyc",
+        "*.pyo",
+        "*.pyd",
+        "*.log",
+        ".pytest_cache/",
+        ".mypy_cache/",
+        "env/",
+        "venv/",
+        ".venv/",
+        "node_modules/",
+        ".git/",
+        ".DS_Store",
+        "dist/",
+        "build/",
+        "coverage/",
+        "*.egg-info/",
+    ]
+    try:
+        data = json.loads(analysis_json or "{}")
+        languages = set(data.get("languages", []))
+        frameworks = set(data.get("frameworks", []))
+        # Language-specific ignores
+        if "JavaScript/TypeScript" in languages:
+            patterns.extend([".next/", "out/", "*.map"])
+        if "Java" in languages:
+            patterns.extend(["target/"])
+        if "Go" in languages:
+            patterns.extend(["bin/", "*.test"])
+    except Exception:
+        pass
+    # Deduplicate while preserving order
+    seen = set()
+    ordered = []
+    for p in patterns:
+        if p not in seen:
+            seen.add(p)
+            ordered.append(p)
+    return "\n".join(ordered) + "\n"
