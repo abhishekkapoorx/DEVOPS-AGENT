@@ -1,15 +1,20 @@
 
 from langgraph_supervisor import create_supervisor
 
-from llms import DEFAULT_MODEL
+from llms import DEFAULT_MODEL, openai_models
+from tools.HandOffs.builder import docker_agent_handoff, k8s_agent_handoff
 
 from .DockerAgent import agent as docker_agent
 from .K8sAgent import agent as k8s_agent
 
 agent = create_supervisor(
-    supervisor_name="builder_agent",
-    model=DEFAULT_MODEL,
+    supervisor_name="docker-k8s-handler",
+    model=openai_models["gpt-3.5-turbo"],
     agents=[docker_agent, k8s_agent],
+    tools=[
+        docker_agent_handoff,
+        k8s_agent_handoff
+    ],
     prompt=(
         "You are a Builder Agent Supervisor responsible for orchestrating containerization and orchestration tasks. "
         "You manage a team of specialized agents to handle different aspects of application deployment and infrastructure management.\n\n"
@@ -99,4 +104,4 @@ agent = create_supervisor(
     ),
     add_handoff_back_messages=True,
     output_mode="full_history",
-).compile(name="builder_agent").with_config({"recursion_limit": 150})
+).compile(name="docker-k8s-handler").with_config({"recursion_limit": 150})

@@ -9,9 +9,46 @@ from langgraph.prebuilt import create_react_agent
 from llms import DEFAULT_MODEL
 from typing import Optional, List, Any
 
-# Get the current directory for the MCP server path
-current_dir = Path(__file__).parent
-aws_mcp_server_path = current_dir / "aws_mcp_server.py"
+
+
+AWS_AGENT_PROMPT = """
+You are an AWS Cloud Agent.
+
+Context and Capabilities:
+- You manage AWS infrastructure tasks using available automation and MCP tool capabilities.
+- Operate safely, cost‑aware, and with least privilege; prefer automation over manual steps.
+
+Objectives (optimize for reliability and clarity):
+- Correctly assess the task, choose the right AWS service(s), and execute using the appropriate category of capability (e.g., resource inventory, deployment, security audit, diagnostics, rollback).
+- Produce concise, verifiable results and next steps.
+
+Process (meta-prompted):
+1) Plan: Output a short 4–8 bullet checklist covering assessment, plan, execution, validation, and rollback.
+2) Assess: Identify dependencies, risks, security implications, regions, and required inputs.
+3) Execute: Use the most relevant capability category. Refer to categories (e.g., "resource inventory") rather than specific tool names unless the user asks.
+4) Validate: Summarize concrete results in 1–2 lines with metrics/IDs/counts.
+5) Iterate/Recover: If validation fails, run diagnostics, propose remediations, or perform rollback where appropriate.
+
+Output Style Guide:
+- Sections in order: Plan, Assessment, Actions, Results, Next steps, Risks.
+- Use tight bullets; avoid verbose narrative. Show only high‑signal reasoning (no internal chain‑of‑thought).
+- When information is missing, ask up to 1–3 targeted questions and propose a sensible default path.
+
+Security and Cost Guardrails:
+- Enforce least privilege, tagging, and region scoping; flag public exposure, encrypted‑at‑rest/‑in‑transit, and budget impact.
+
+Examples (abbreviated):
+User: "List EC2 instances in us-east-1 tagged env=prod"
+Agent:
+- Plan: inventory; filter by tag; validate counts; surface next steps.
+- Actions: (resource inventory) list instances region=us-east-1 tag=env:prod
+- Results: 12 instances; 11 running, 1 stopped; sample IDs: i-abc..., i-def...
+- Next steps: export to CSV or check cost and rightsizing.
+
+Evaluation:
+- After each action, self-check against the success criteria and report pass/fail succinctly.
+"""
+
 
 # MCP server configuration
 mcp_servers = {
@@ -20,8 +57,6 @@ mcp_servers = {
         "args": ["-m", "awslabs.aws_api_mcp_server.server"],
         "transport": "stdio",
         "env": {"AWS_REGION": "us-east-1"},
-        # "disabled": False,
-        # "autoApprove": [],
     },
     "aws-knowledge-mcp-server": {
         "url":"https://knowledge-mcp.global.api.aws",
@@ -48,18 +83,8 @@ class AWSMCPClient:
             self.agent = create_react_agent(
                 model=DEFAULT_MODEL,
                 tools=self.tools,
-                name="aws_agent_mcp",
-                prompt="""You are an AWS Cloud Agent specialized in AWS operations and management.
-                
-                    Instructions:
-                    - Use the tools made available to you via MCP to complete cloud tasks end-to-end.
-                    - Maintain autonomy: think, plan, act with tools, and iterate without requiring manual user steps.
-                    - Provide clear, actionable outputs; format resource listings for readability.
-                    - On errors, explain the issue, propose a fix, and retry when appropriate.
-                    - Prioritize security, least privilege, and cost awareness in recommendations.
-                    - Do not enumerate or name specific tools unless the user asks.
-
-                    When uncertain, briefly analyze and then select the most relevant tool to proceed.""",
+                name="aws_agent",
+                prompt=AWS_AGENT_PROMPT,
             )
 
             return True
@@ -70,7 +95,7 @@ class AWSMCPClient:
             self.agent = create_react_agent(
                 model=DEFAULT_MODEL,
                 tools=[],
-                name="aws_agent_fallback",
+                name="aws_agent",
                 prompt="""You are an AWS Cloud Agent, but AWS MCP tools are currently unavailable. 
                 
                     Please inform the user that AWS tools are not accessible and suggest they:

@@ -12,17 +12,6 @@ DEFAULT_MODEL = primary_model.with_fallbacks(
         gemini_models["gemini-2.5-pro"],
         ollama_models["gpt-oss:20b"],
         gemini_models["gemini-2.5-pro-deep-think"],
-        openai_models["gpt-5"],
-        openai_models["gpt-5-chat"],
-        openai_models["gpt-4o"],
-        gemini_models["gemini-1.5-pro"],
-        openai_models["gpt-5-mini"],
-        gemini_models["gemini-2.5-flash"],
-        openai_models["gpt-4o-mini"],
-        gemini_models["gemini-1.5-flash"],
-        openai_models["gpt-5-nano"],
-        gemini_models["gemini-2.5-flash-lite"],
-        openai_models["gpt-3.5-turbo"],
     ]
 )
 
