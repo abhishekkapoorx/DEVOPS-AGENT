@@ -77,7 +77,24 @@ class AWSMCPClient:
         """Initialize the MCP client and load tools."""
         try:
             self.client = MultiServerMCPClient(mcp_servers)
-            self.tools = await self.client.get_tools()
+            raw_tools = await self.client.get_tools()
+
+            # Sanitize tool schemas to satisfy LLM tool parameter requirements
+            self.tools = []
+            for tool in raw_tools:
+                try:
+                    # Expecting OpenAI-style tool schema: {"type":"function","function":{name, description, parameters}}
+                    if isinstance(tool, dict) and tool.get("type") == "function":
+                        fn = tool.get("function", {}) or {}
+                        params = fn.get("parameters")
+                        if not isinstance(params, dict) or not params.get("type"):
+                            # Provide a minimal valid JSON schema for parameters
+                            fn["parameters"] = {"type": "object", "properties": {}}
+                            tool["function"] = fn
+                    self.tools.append(tool)
+                except Exception:
+                    # If anything goes wrong, fall back to the original tool entry
+                    self.tools.append(tool)
 
             # Create ReAct agent with the tools
             self.agent = create_react_agent(

@@ -3,7 +3,7 @@ from langchain_community.agent_toolkits.file_management.toolkit import (
     FileManagementToolkit,
 )
 from llms import DEFAULT_MODEL
-from codebase_indexing.tools.agent_tools import create_agent_tools
+# from codebase_indexing.tools.agent_tools import create_agent_tools
 
 # Tools
 tools = FileManagementToolkit(
