@@ -193,7 +193,7 @@ supervisor = (
         ],
         prompt=SUPERVISOR_PROMPT,
         add_handoff_back_messages=True,
-        output_mode="full_history",
+        output_mode="last_message",
         state_schema=PlanState,
         pre_model_hook=planning_hook
     )
