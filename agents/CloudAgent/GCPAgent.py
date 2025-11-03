@@ -5,7 +5,7 @@ GCP MCP Client utility for async operations
 import asyncio
 from pathlib import Path
 from langchain_mcp_adapters.client import MultiServerMCPClient
-from langgraph.prebuilt import create_react_agent
+from langchain.agents import create_agent
 from llms import DEFAULT_MODEL
 from typing import Optional, List, Any
 
@@ -78,12 +78,12 @@ class GCPMCPClient:
             self.client = MultiServerMCPClient(mcp_servers)
             self.tools = await self.client.get_tools()
 
-            # Create ReAct agent with the tools
-            self.agent = create_react_agent(
+            # Create agent with the tools
+            self.agent = create_agent(
                 model=DEFAULT_MODEL,
                 tools=self.tools,
                 name="gcp_agent",
-                prompt=GCP_AGENT_PROMPT,
+                system_prompt=GCP_AGENT_PROMPT,
             )
 
             return True
@@ -91,15 +91,15 @@ class GCPMCPClient:
         except Exception as e:
             print(f"Warning: Failed to load GCP MCP tools: {e}")
             # Create fallback agent without MCP tools
-            self.agent = create_react_agent(
+            self.agent = create_agent(
                 model=DEFAULT_MODEL,
                 tools=[],
                 name="gcp_agent",
-                prompt="""You are an GCP Cloud Agent, but GCP MCP tools are currently unavailable. 
-                
+                system_prompt="""You are a GCP Cloud Agent, but GCP MCP tools are currently unavailable.
+                    
                     Please inform the user that GCP tools are not accessible and suggest they:
                     1. Check GCP credentials configuration
-                    2. Ensure boto3 is properly installed
+                    2. Ensure gcloud SDK is properly installed
                     3. Verify the GCP MCP server is running
                     4. Check network connectivity to GCP services
 
