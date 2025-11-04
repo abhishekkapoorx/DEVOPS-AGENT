@@ -10,7 +10,7 @@ from sentence_transformers import SentenceTransformer
 from dotenv import load_dotenv
 from tqdm import tqdm
 
-from .utils import get_code_files
+from .utils import get_code_files, get_logger
 
 load_dotenv()
 
@@ -39,16 +39,19 @@ class PineconeIndexer:
         self.api_key = api_key or os.getenv("PINECONE_API_KEY")
         if not self.api_key:
             raise ValueError("Pinecone API key is required. Set PINECONE_API_KEY environment variable.")
+
         
         self.index_name = index_name
         self.dimension = dimension
         self.environment = environment
+        self.logger = get_logger(__name__)
         
         # Initialize Pinecone
         self.pc = Pinecone(api_key=self.api_key)
         
         # Initialize embedding model
         print(f"Loading embedding model: {embedding_model}")
+        self.logger.info(f"Loading embedding model: {embedding_model}")
         self.embedding_model = SentenceTransformer(embedding_model)
         
         # Initialize text splitter
@@ -68,6 +71,7 @@ class PineconeIndexer:
         
         if self.index_name not in existing_indexes:
             print(f"Creating new Pinecone index: {self.index_name}")
+            self.logger.info(f"Creating new Pinecone index: {self.index_name}")
             self.pc.create_index(
                 name=self.index_name,
                 dimension=self.dimension,
@@ -84,6 +88,7 @@ class PineconeIndexer:
         
         self.index = self.pc.Index(self.index_name)
         print(f"Connected to Pinecone index: {self.index_name}")
+        self.logger.info(f"Connected to Pinecone index: {self.index_name}")
     
     def _generate_embedding(self, text: str) -> List[float]:
         """Generate embedding for text."""
@@ -94,7 +99,7 @@ class PineconeIndexer:
         folder_path: str,
         included_extensions: Optional[List[str]] = None,
         excluded_patterns: Optional[List[str]] = None,
-        batch_size: int = 100
+        batch_size: int = 32
     ) -> Dict[str, Any]:
         """
         Index all code files in a folder to Pinecone.
@@ -109,8 +114,15 @@ class PineconeIndexer:
             Dictionary with indexing statistics
         """
         print(f"Scanning folder: {folder_path}")
-        files = get_code_files(folder_path, included_extensions, excluded_patterns)
+        self.logger.info(f"Scanning folder: {folder_path}")
+        files = get_code_files(
+            folder_path,
+            included_extensions=included_extensions,
+            excluded_patterns=excluded_patterns,
+            use_gitignore=True,
+        )
         print(f"Found {len(files)} files to index")
+        self.logger.info(f"Found {len(files)} files to index")
         
         total_chunks = 0
         indexed_files = 0
@@ -128,6 +140,7 @@ class PineconeIndexer:
                     failed_files += 1
             except Exception as e:
                 print(f"Error indexing file {file_info['path']}: {e}")
+                self.logger.warning(f"Error indexing file {file_info['path']}: {e}")
                 failed_files += 1
                 continue
         
@@ -140,10 +153,15 @@ class PineconeIndexer:
         }
         
         print(f"\nIndexing complete!")
+        self.logger.info("Indexing complete!")
         print(f"Total files: {stats['total_files']}")
+        self.logger.info(f"Total files: {stats['total_files']}")
         print(f"Indexed: {stats['indexed_files']}")
+        self.logger.info(f"Indexed: {stats['indexed_files']}")
         print(f"Failed: {stats['failed_files']}")
+        self.logger.info(f"Failed: {stats['failed_files']}")
         print(f"Total chunks: {stats['total_chunks']}")
+        self.logger.info(f"Total chunks: {stats['total_chunks']}")
         
         return stats
     
@@ -231,7 +249,10 @@ def index_to_pinecone(
     Returns:
         Dictionary with indexing statistics
     """
-    indexer = PineconeIndexer(api_key=api_key, index_name=index_name)
-    return indexer.index_folder(folder_path, included_extensions, excluded_patterns)
+
+    EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
+    EMBEDDING_DIMENSION = int(os.getenv("EMBEDDING_DIMENSION", 384))
+    indexer = PineconeIndexer(api_key=api_key, index_name=index_name, embedding_model=EMBEDDING_MODEL, dimension=EMBEDDING_DIMENSION)
+    return indexer.index_folder(folder_path, included_extensions, excluded_patterns, batch_size=16)
 
 

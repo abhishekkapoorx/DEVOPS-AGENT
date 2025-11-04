@@ -9,4 +9,3 @@ from .main import index_codebase
 __all__ = ["index_to_pinecone", "index_to_neo4j", "index_codebase"]
 
 
-

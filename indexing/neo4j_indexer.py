@@ -10,7 +10,7 @@ from neo4j import GraphDatabase
 from dotenv import load_dotenv
 from tqdm import tqdm
 
-from .utils import get_code_files
+from .utils import get_code_files, get_logger
 
 load_dotenv()
 
@@ -35,13 +35,14 @@ class Neo4jIndexer:
             database: Neo4j database name (defaults to "neo4j")
         """
         self.uri = uri or os.getenv("NEO4J_URI", "bolt://localhost:7687")
-        self.user = user or os.getenv("NEO4J_USER", "neo4j")
+        self.user = user or os.getenv("NEO4J_USERNAME", "neo4j")
         self.password = password or os.getenv("NEO4J_PASSWORD")
         
         if not self.password:
             raise ValueError("Neo4j password is required. Set NEO4J_PASSWORD environment variable.")
         
         self.database = database
+        self.logger = get_logger(__name__)
         
         # Initialize Neo4j driver
         self.driver = GraphDatabase.driver(self.uri, auth=(self.user, self.password))
@@ -51,6 +52,7 @@ class Neo4jIndexer:
             with self.driver.session(database=self.database) as session:
                 session.run("RETURN 1")
             print(f"Connected to Neo4j at {self.uri}")
+            self.logger.info(f"Connected to Neo4j at {self.uri}")
         except Exception as e:
             raise ConnectionError(f"Failed to connect to Neo4j: {e}")
         
@@ -73,6 +75,7 @@ class Neo4jIndexer:
                 except Exception as e:
                     # Constraint might already exist
                     print(f"Note: {constraint} - {e}")
+                    self.logger.info(f"Note: {constraint} - {e}")
             
             # Create indexes for better performance
             indexes = [
@@ -85,6 +88,7 @@ class Neo4jIndexer:
                     session.run(index)
                 except Exception as e:
                     print(f"Note: {index} - {e}")
+                    self.logger.info(f"Note: {index} - {e}")
     
     def _generate_file_id(self, file_path: str) -> str:
         """Generate a unique ID for a file."""
@@ -108,8 +112,15 @@ class Neo4jIndexer:
             Dictionary with indexing statistics
         """
         print(f"Scanning folder: {folder_path}")
-        files = get_code_files(folder_path, included_extensions, excluded_patterns)
+        self.logger.info(f"Scanning folder: {folder_path}")
+        files = get_code_files(
+            folder_path,
+            included_extensions=included_extensions,
+            excluded_patterns=excluded_patterns,
+            use_gitignore=True,
+        )
         print(f"Found {len(files)} files to index")
+        self.logger.info(f"Found {len(files)} files to index")
         
         indexed_files = 0
         failed_files = 0
@@ -123,6 +134,7 @@ class Neo4jIndexer:
                 indexed_files += 1
             except Exception as e:
                 print(f"Error indexing file {file_info['path']}: {e}")
+                self.logger.warning(f"Error indexing file {file_info['path']}: {e}")
                 failed_files += 1
                 continue
         
@@ -134,10 +146,15 @@ class Neo4jIndexer:
         }
         
         print(f"\nNeo4j indexing complete!")
+        self.logger.info("Neo4j indexing complete!")
         print(f"Total files: {stats['total_files']}")
+        self.logger.info(f"Total files: {stats['total_files']}")
         print(f"Indexed: {stats['indexed_files']}")
+        self.logger.info(f"Indexed: {stats['indexed_files']}")
         print(f"Failed: {stats['failed_files']}")
+        self.logger.info(f"Failed: {stats['failed_files']}")
         print(f"Total relationships: {stats['total_relationships']}")
+        self.logger.info(f"Total relationships: {stats['total_relationships']}")
         
         return stats
     
@@ -163,7 +180,7 @@ class Neo4jIndexer:
             session.run(
                 file_query,
                 file_id=file_id,
-                path=file_info['absolute_path'],
+                path=file_info['path'],
                 relative_path=file_info['relative_path'],
                 filename=file_info['filename'],
                 extension=file_info['extension'],
@@ -238,10 +255,10 @@ class Neo4jIndexer:
         # Simple pattern matching for imports
         import_patterns = {
             '.py': [r'^import\s+(\w+)', r'^from\s+(\w+)\s+import'],
-            '.js': [r'^import\s+.*from\s+[\'"]([^\'"]+)[\'"]', r'^const\s+\w+\s*=\s*require\([\'"]([^\'"]+)[\'"]'],
-            '.ts': [r'^import\s+.*from\s+[\'"]([^\'"]+)[\'"]'],
+            '.js': [r'^import\s+.*from\s+["\']([^"\']+)["\']', r'^const\s+\w+\s*=\s*require\(["\']([^"\']+)["\']\)'],
+            '.ts': [r'^import\s+.*from\s+["\']([^"\']+)["\']'],
             '.java': [r'^import\s+([\w.]+)'],
-            '.go': [r'^import\s+[\'"]([^\'"]+)[\'"]'],
+            '.go': [r'^import\s+["\']([^"\']+)["\']'],
         }
         
         imports = set()
