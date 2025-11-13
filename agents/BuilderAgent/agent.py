@@ -4,6 +4,11 @@ from langgraph_supervisor import create_supervisor
 from llms import DEFAULT_MODEL, openai_models
 from tools.HandOffs.builder import docker_agent_handoff, k8s_agent_handoff
 
+from utils.context_middleware import (
+    bind_context_before_model,
+    bind_context_for_tools,
+)
+
 from .DockerAgent import agent as docker_agent
 from .K8sAgent import agent as k8s_agent
 
@@ -104,4 +109,5 @@ agent = create_supervisor(
     ),
     add_handoff_back_messages=True,
     output_mode="full_history",
+    middleware=[bind_context_before_model, bind_context_for_tools],
 ).compile(name="docker-k8s-handler").with_config({"recursion_limit": 150})

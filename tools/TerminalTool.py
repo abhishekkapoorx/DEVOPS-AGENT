@@ -1,50 +1,39 @@
-import subprocess
-from langchain_core.tools import tool
+"""
+Terminal tools that respect the agent runtime context.
+"""
 
+from __future__ import annotations
+
+import subprocess
+from typing import Optional
+
+from langchain_core.tools import tool
 from langchain_community.tools.shell.tool import ShellTool
+
+from utils.context import get_current_context, get_working_directory
 
 shell_tool = ShellTool()
 
 
-@tool
-def run_windows_command(command: str) -> str:
-    """Execute a Windows command and return the output.
-    
-    Args:
-        command (str): The Windows command to execute. Can include shell commands, 
-                      batch files, PowerShell commands, or any executable available 
-                      in the system PATH. Examples: 'dir', 'echo hello', 'python script.py'
-    
-    Returns:
-        str: The command output (stdout) if successful, or error message (stderr) 
-             if the command fails. Returns "Error: <exception_message>" if an 
-             exception occurs during execution.
-    """
-    try:
-        result = subprocess.run(command, shell=True, capture_output=True, text=True)
-        return result.stdout if result.stdout else result.stderr
-    except Exception as e:
-        return f"Error: {str(e)}"
+def _subprocess_run(command: str, *, cwd: Optional[str] = None) -> subprocess.CompletedProcess[str]:
+    """Helper to execute subprocess with context-aware working directory."""
+    return subprocess.run(
+        command,
+        shell=True,
+        capture_output=True,
+        text=True,
+        cwd=cwd,
+    )
 
-import subprocess
-from langchain_core.tools import tool
 
 @tool
 def run_windows_command(command: str) -> str:
-    """Execute a Windows command and return the output.
-    
-    Args:
-        command (str): The Windows command to execute. Can include shell commands, 
-                      batch files, PowerShell commands, or any executable available 
-                      in the system PATH. Examples: 'dir', 'echo hello', 'python script.py'
-    
-    Returns:
-        str: The command output (stdout) if successful, or error message (stderr) 
-             if the command fails. Returns "Error: <exception_message>" if an 
-             exception occurs during execution.
-    """
+    """Execute a Windows command in the agent's working directory."""
+    context = get_current_context()
+    working_dir = get_working_directory(context)
+
     try:
-        result = subprocess.run(command, shell=True, capture_output=True, text=True)
+        result = _subprocess_run(command, cwd=working_dir)
         return result.stdout if result.stdout else result.stderr
-    except Exception as e:
-        return f"Error: {str(e)}"
+    except Exception as exc:  # pragma: no cover - defensive
+        return f"Error: {exc}"

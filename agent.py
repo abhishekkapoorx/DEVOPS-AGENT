@@ -13,6 +13,11 @@ from tools.HandOffs.agent import (
 from utils.plan_state import PlanState
 from utils.planning import create_planning_hook
 from utils.rag import get_pinecone_retriever, create_rag_context_hook
+from utils.context import AgentContext, set_working_directory_context
+from utils.context_middleware import (
+    bind_context_before_model,
+    bind_context_for_tools,
+)
 
 from loguru import logger
 
@@ -31,13 +36,21 @@ if rag_retriever:
 
     def combined_pre_model_hook(state):
         updated_state = rag_hook(state)
-        return planning_hook(updated_state)
+        updated_state = planning_hook(updated_state)
+        if "remaining_steps" in updated_state:
+            updated_state = dict(updated_state)
+            updated_state.pop("remaining_steps", None)
+        return updated_state
 
 else:
     logger.warning("Pinecone retriever unavailable; proceeding without RAG context.")
 
     def combined_pre_model_hook(state):
-        return planning_hook(state)
+        updated_state = planning_hook(state)
+        if "remaining_steps" in updated_state:
+            updated_state = dict(updated_state)
+            updated_state.pop("remaining_steps", None)
+        return updated_state
 
 
 SUPERVISOR_PROMPT = """ 
@@ -101,6 +114,7 @@ supervisor = (
         add_handoff_back_messages=True,
         output_mode="last_message",
         state_schema=PlanState,
+        middleware=[bind_context_before_model, bind_context_for_tools],
         pre_model_hook=combined_pre_model_hook
     )
     .compile(name="supervisor")

@@ -11,6 +11,10 @@ from tools.HandOffs.cloud import (
     azure_agent_handoff,
     gcp_agent_handoff
 )
+from utils.context_middleware import (
+    bind_context_before_model,
+    bind_context_for_tools,
+)
 
 CLOUD_AGENT_PROMPT = """
 Developer: You are a Supervisor agent tasked with overseeing and coordinating a set of specialized sub-agents, each responsible for a major cloud platform: AWS, Azure, and GCP. Your role is to efficiently manage these sub-agents to enable autonomous, multi-cloud operations without manual end-user intervention. Below is your operational framework and set of governance rules:
@@ -84,4 +88,5 @@ agent = create_supervisor(
     prompt=CLOUD_AGENT_PROMPT,
     add_handoff_back_messages=True,
     output_mode="full_history",
+    middleware=[bind_context_before_model, bind_context_for_tools],
 ).compile(name="cloud_agent").with_config({"recursion_limit": 150})

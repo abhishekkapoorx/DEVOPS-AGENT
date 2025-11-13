@@ -46,7 +46,7 @@ def _get_env(name: str, default: Optional[str] = None) -> Optional[str]:
 @lru_cache(maxsize=1)
 def get_pinecone_retriever(
     index_name: Optional[str] = None,
-    top_k: int = 5,
+    top_k: int = 3,
 ) -> Optional[BaseRetriever]:
     """Return a cached LangChain retriever backed by Pinecone.
 
@@ -56,7 +56,8 @@ def get_pinecone_retriever(
         Optional override for the Pinecone index name; defaults to
         ``PINECONE_INDEX_NAME`` env var or ``"codebase-index"``.
     top_k
-        Number of results to retrieve per query.
+        Number of results to retrieve per query. Defaults to 3 to avoid
+        token limit issues.
 
     Returns
     -------
@@ -95,7 +96,8 @@ def create_rag_context_hook(
     retriever: BaseRetriever,
     *,
     context_prefix: str = "Retrieved context:\n",
-    max_docs: Optional[int] = 5,
+    max_docs: Optional[int] = 3,
+    max_chunk_length: int = 1500,
 ) -> Callable[[Dict[str, Any]], Dict[str, Any]]:
     """Produce a LangGraph pre-model hook that injects Pinecone context.
 
@@ -108,7 +110,11 @@ def create_rag_context_hook(
         ``"Retrieved context:"``.
     max_docs
         Maximum number of documents to include in the formatted output. When
-        ``None`` all retrieved documents are used.
+        ``None`` all retrieved documents are used. Defaults to 3 to avoid
+        token limit issues.
+    max_chunk_length
+        Maximum number of characters per document chunk. Longer chunks will
+        be truncated. Defaults to 1500 to keep token usage reasonable.
 
     Returns
     -------
@@ -120,6 +126,7 @@ def create_rag_context_hook(
     def _format_documents(docs: Iterable[Document]) -> str:
         """Convert raw ``Document`` objects into Markdown with metadata."""
         sections = []
+        # Use max_chunk_length from closure
 
         for idx, doc in enumerate(docs):
             if max_docs is not None and idx >= max_docs:
@@ -157,6 +164,9 @@ def create_rag_context_hook(
             content = (doc.page_content or "").strip()
             if not content:
                 content = "(No content returned)"
+            elif len(content) > max_chunk_length:
+                # Truncate content to avoid token limit issues
+                content = content[:max_chunk_length] + "\n... (truncated)"
 
             section_lines.append("\n```markdown\n" + content + "\n```")
 

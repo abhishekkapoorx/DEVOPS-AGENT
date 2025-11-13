@@ -96,7 +96,7 @@ class GCPMCPClient:
                 tools=[],
                 name="gcp_agent",
                 system_prompt="""You are a GCP Cloud Agent, but GCP MCP tools are currently unavailable.
-                    
+                
                     Please inform the user that GCP tools are not accessible and suggest they:
                     1. Check GCP credentials configuration
                     2. Ensure gcloud SDK is properly installed
