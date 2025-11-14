@@ -15,6 +15,7 @@ from utils.context_middleware import (
     bind_context_before_model,
     bind_context_for_tools,
 )
+from utils.agent_hooks import build_combined_pre_model_hook
 
 CLOUD_AGENT_PROMPT = """
 Developer: You are a Supervisor agent tasked with overseeing and coordinating a set of specialized sub-agents, each responsible for a major cloud platform: AWS, Azure, and GCP. Your role is to efficiently manage these sub-agents to enable autonomous, multi-cloud operations without manual end-user intervention. Below is your operational framework and set of governance rules:
@@ -76,6 +77,19 @@ aws_agent = _resolve_agent_sync(get_aws_agent)
 # azure_agent = _resolve_agent_sync(get_azure_agent)
 gcp_agent = _resolve_agent_sync(get_gcp_agent)
 
+cloud_pre_model_hook = build_combined_pre_model_hook(
+    model=DEFAULT_MODEL,
+    rag_retriever=None,
+    trim_kwargs={
+        "max_messages": 5,
+        "summarize_old": True,
+    },
+    planning_kwargs={
+        "min_messages_for_update": 5,
+        "max_plan_versions": 3,
+    },
+)
+
 agent = create_supervisor(
     supervisor_name="cloud_agent",
     model=DEFAULT_MODEL,
@@ -88,5 +102,6 @@ agent = create_supervisor(
     prompt=CLOUD_AGENT_PROMPT,
     add_handoff_back_messages=True,
     output_mode="full_history",
+    pre_model_hook=cloud_pre_model_hook,
     middleware=[bind_context_before_model, bind_context_for_tools],
 ).compile(name="cloud_agent").with_config({"recursion_limit": 150})

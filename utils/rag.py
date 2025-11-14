@@ -28,7 +28,11 @@ from functools import lru_cache
 from typing import Callable, Dict, Any, Optional, Iterable
 
 from langchain_pinecone import PineconeVectorStore
-from langchain_community.embeddings import HuggingFaceEmbeddings
+try:
+    from langchain_huggingface import HuggingFaceEmbeddings
+except ImportError:
+    # Fallback for older installations
+    from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_core.retrievers import BaseRetriever
 from langchain_core.documents import Document
 from langchain_core.messages import SystemMessage, HumanMessage

@@ -11,8 +11,8 @@ from tools.HandOffs.agent import (
     coder_agent_handoff
 )
 from utils.plan_state import PlanState
-from utils.planning import create_planning_hook
-from utils.rag import get_pinecone_retriever, create_rag_context_hook
+from utils.agent_hooks import build_combined_pre_model_hook
+from utils.rag import get_pinecone_retriever
 from utils.context import AgentContext, set_working_directory_context
 from utils.context_middleware import (
     bind_context_before_model,
@@ -21,36 +21,25 @@ from utils.context_middleware import (
 
 from loguru import logger
 
-# Create planning hook with default settings
-planning_hook = create_planning_hook(
-    model=DEFAULT_MODEL,
-    min_messages_for_update=5,
-    max_plan_versions=3,
-)
-
 # Optional RAG hook sourced from Pinecone
 rag_retriever = get_pinecone_retriever()
 if rag_retriever:
     logger.info("Pinecone retriever loaded for RAG context.")
-    rag_hook = create_rag_context_hook(rag_retriever)
-
-    def combined_pre_model_hook(state):
-        updated_state = rag_hook(state)
-        updated_state = planning_hook(updated_state)
-        if "remaining_steps" in updated_state:
-            updated_state = dict(updated_state)
-            updated_state.pop("remaining_steps", None)
-        return updated_state
-
 else:
     logger.warning("Pinecone retriever unavailable; proceeding without RAG context.")
 
-    def combined_pre_model_hook(state):
-        updated_state = planning_hook(state)
-        if "remaining_steps" in updated_state:
-            updated_state = dict(updated_state)
-            updated_state.pop("remaining_steps", None)
-        return updated_state
+combined_pre_model_hook = build_combined_pre_model_hook(
+    model=DEFAULT_MODEL,
+    rag_retriever=rag_retriever,
+    trim_kwargs={
+        "max_messages": 5,
+        "summarize_old": True,
+    },
+    planning_kwargs={
+        "min_messages_for_update": 5,
+        "max_plan_versions": 3,
+    },
+)
 
 
 SUPERVISOR_PROMPT = """ 
