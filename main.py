@@ -57,6 +57,12 @@ Implementations:
     )
     
     parser.add_argument(
+        "--root-dir",
+        default=None,
+        help="Root directory for file operations (default: current working directory)"
+    )
+    
+    parser.add_argument(
         "message",
         nargs="?",
         help="Message to send to the agent"
@@ -77,16 +83,21 @@ Implementations:
     logger.info("="*60)
     logger.info(f"Implementation: {args.impl}")
     logger.info(f"Thread ID: {args.thread_id}")
+    if args.root_dir:
+        logger.info(f"Root Directory: {args.root_dir}")
     logger.info("="*60 + "\n")
     
     # Import the appropriate implementation
     if args.impl == "modular":
-        from devops_agents.modular import invoke_modular_agent as invoke
+        from devops_agents.modular import invoke_modular_agent
         logger.info("✓ Using Modular CompiledSubAgent with existing agents (RECOMMENDED)")
+        # Use the function directly - root_dir will be passed explicitly
+        invoke = invoke_modular_agent
     else:  # custom
         from custom import invoke_custom_agent
         # Custom uses different signature
-        def invoke(message, thread_id):
+        def invoke(message, thread_id, root_dir=None):
+            # root_dir ignored for custom implementation
             return invoke_custom_agent(message, session_id=thread_id)
         logger.info("✓ Using Custom Deep Agents")
     
@@ -109,7 +120,12 @@ Implementations:
                 
                 logger.info("\nAgent: Thinking...\n")
                 
-                result = invoke(message, args.thread_id)
+                # Pass root_dir if it's the modular implementation
+                if args.impl == "modular":
+                    result = invoke(message, thread_id=args.thread_id, root_dir=args.root_dir)
+                else:
+                    result = invoke(message, args.thread_id)
+                
                 response = result["messages"][-1].content
                 
                 logger.info(f"Agent: {response}\n")
@@ -126,7 +142,12 @@ Implementations:
         logger.info("Agent: Thinking...\n")
         
         try:
-            result = invoke(args.message, args.thread_id)
+            # Pass root_dir if it's the modular implementation
+            if args.impl == "modular":
+                result = invoke(args.message, thread_id=args.thread_id, root_dir=args.root_dir)
+            else:
+                result = invoke(args.message, args.thread_id)
+            
             response = result["messages"][-1].content
             
             logger.info(f"Agent: {response}\n")

@@ -8,7 +8,7 @@ This module contains the modular implementation using CompiledSubAgent pattern.
 - Wraps agents from /agents directory (BuilderAgent, CloudAgent, etc.)
 - Deep agent patterns with reflection and self-critique
 - Context quarantine enforced
-- Most robust and maintainable
+   - Most robust and maintainable
 
 Subagents:
 - builder_expert: Docker + Kubernetes (wraps BuilderAgent)

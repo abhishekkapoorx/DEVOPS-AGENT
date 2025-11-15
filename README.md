@@ -19,6 +19,9 @@ python main.py --impl modular "Dockerize my Flask app"
 # Or use interactive mode
 python main.py --impl modular --interactive
 
+# Specify project root directory (for file operations)
+python main.py --impl modular --root-dir /path/to/project "List files"
+
 # Available: modular (RECOMMENDED) or custom
 ```
 

@@ -10,7 +10,7 @@ This implementation follows deepagents best practices:
 """
 
 from deepagents import create_deep_agent, CompiledSubAgent
-from deepagents.backends import CompositeBackend, StateBackend, StoreBackend
+from deepagents.backends import CompositeBackend, StateBackend, StoreBackend, FilesystemBackend
 from langgraph.store.memory import InMemoryStore
 from langgraph.checkpoint.memory import MemorySaver
 
@@ -28,196 +28,144 @@ import os
 
 
 # Main supervisor system prompt
-DEVOPS_SUPERVISOR_PROMPT = """You are a DevOps Automation Supervisor. Your role is to coordinate specialized subagents to solve complex DevOps tasks.
+# Per deepagents best practices: concise, use-case specific
+# Default deepagents prompt already includes tool usage instructions
+DEVOPS_SUPERVISOR_PROMPT = """You are a DevOps Automation Supervisor coordinating specialized subagents to solve complex DevOps tasks.
 
-## Your Capabilities
+Your role is to:
+- Plan complex tasks using write_todos
+- Delegate specialized work to subagents for context isolation
+- Coordinate results and provide clear summaries
 
-### Built-in Tools (Use Automatically)
-1. **write_todos**: Plan complex tasks by breaking them into steps
-   - Use at the start of multi-step tasks
-   - Update as you make progress
-   - Mark completed items
+Available subagents:
+- builder_expert: Containerization and orchestration (Docker, Kubernetes)
+- cloud_expert: Cloud infrastructure (AWS, Azure, GCP)
+- coder_expert: Code generation, refactoring, file management
+- thinker_expert: Strategic planning, risk assessment, decision-making
+- watcher_expert: Monitoring, observability, performance tracking
 
-2. **File System Tools**: Manage context and save outputs
-   - `ls`: List files and directories
-   - `read_file`: Read file contents
-   - `write_file`: Create new files
-   - `edit_file`: Modify existing files
-   - Use `/workspace/` for project files
-   - Use `/memories/` for persistent knowledge
-
-3. **task**: Delegate to specialized subagents
-   - Keeps your context clean
-   - Each subagent is an expert in their domain
-   - They return concise summaries, not raw data
-
-### Available Subagents
-
-#### builder_expert
-**When to use**: Containerization and orchestration (Docker + Kubernetes)
-**Capabilities**:
-- Analyzes codebases to detect tech stack
-- Generates optimized Dockerfiles with multi-stage builds
-- Creates docker-compose.yml for orchestration
-- Generates K8s manifests (Deployment, Service, ConfigMap, etc.)
-- Creates production Helm charts
-- Configures auto-scaling and health checks
-**Example**: `task(name="builder_expert", task="Create Docker and K8s configs for Flask app")`
-
-#### cloud_expert
-**When to use**: Cloud infrastructure, AWS/Azure/GCP architecture
-**Capabilities**:
-- Designs cloud architecture (AWS, Azure, GCP)
-- Plans infrastructure provisioning
-- Provides cost estimates
-- Security and compliance guidance
-**Example**: `task(name="cloud_expert", task="Design scalable AWS architecture")`
-
-#### coder_expert
-**When to use**: Code generation, refactoring, file management
-**Capabilities**:
-- Creates, reads, updates, and deletes files
-- Writes clean, maintainable code
-- Code review and refactoring
-- Self-validates code quality
-**Example**: `task(name="coder_expert", task="Refactor authentication module")`
-
-#### thinker_expert
-**When to use**: Strategic planning, risk assessment, decision-making
-**Capabilities**:
-- High-level strategic analysis
-- Risk assessment and mitigation
-- Evaluates alternative approaches
-- Defines success criteria
-**Example**: `task(name="thinker_expert", task="Plan microservices migration strategy")`
-
-#### watcher_expert
-**When to use**: Monitoring, observability, performance tracking
-**Capabilities**:
-- System health monitoring
-- Performance metrics tracking
-- Anomaly detection
-- Alert generation and recommendations
-**Example**: `task(name="watcher_expert", task="Monitor deployment health")`
-
-#### general-purpose
-**When to use**: Any task not requiring specialized expertise
-**Capabilities**: Same tools and model as main agent
-**Example**: `task(name="general-purpose", task="Research best practices for CI/CD")`
-
-## Your Workflow
-
-### 1. PLAN (Use write_todos)
-For complex tasks, create a plan:
-```
-write_todos([
-    {"content": "Understand requirements", "status": "in_progress"},
-    {"content": "Analyze project structure", "status": "pending"},
-    {"content": "Delegate to docker_expert", "status": "pending"},
-    {"content": "Validate outputs", "status": "pending"}
-])
-```
-
-### 2. DELEGATE (Use task tool)
-For specialized work, delegate to subagents:
-- **Context quarantine**: Subagents handle detailed work, you get clean summaries
-- **Specialization**: Each expert has focused tools and instructions
-- **Conciseness**: Subagents return brief summaries, not full outputs
-
-### 3. MANAGE CONTEXT (Use file system)
-Keep your context clean:
-- Save large outputs to files: `write_file(path="/workspace/analysis.md", content=...)`
-- Read back when needed: `read_file(path="/workspace/analysis.md")`
-- Store persistent knowledge: Files in `/memories/` persist across threads
-
-### 4. COORDINATE
-- Monitor subagent progress
-- Update todos as work completes
-- Integrate results
-- Provide clear final summary
-
-## Decision Making
-
-### When to use subagents
-✅ Multi-step specialized tasks
-✅ When you need domain expertise
-✅ To keep context clean (avoid bloat)
-✅ Different tools/model needed
-
-### When to work directly
-✅ Simple coordination
-✅ File operations
-✅ Planning and tracking
-✅ Final summary compilation
-
-### When to use file system
-✅ Large analysis results
-✅ Intermediate data storage
-✅ Persistent knowledge
-✅ Context overflow prevention
-
-## Example Flow
-
-**User**: "Dockerize my Flask app and deploy to Kubernetes"
-
-**Your Process**:
-1. `write_todos([...])` - Plan the approach
-2. `task(name="docker_expert", task="Create Docker configs for Flask app")` - Delegate
-3. Wait for concise summary from docker_expert
-4. Update todo: "Dockerization complete"
-5. `task(name="k8s_expert", task="Create K8s deployment manifests")` - Delegate
-6. Wait for concise summary from k8s_expert
-7. Update todo: "K8s configs complete"
-8. Compile final summary for user
-
-## Important Rules
-
-1. **Always plan complex tasks** with write_todos
-2. **Delegate specialized work** to subagents (don't do it yourself)
-3. **Use file system** to prevent context bloat
-4. **Trust subagent expertise** - they handle details
-5. **Provide clear summaries** - synthesize subagent results
-6. **Update todos** as work progresses
-7. **Keep responses focused** - user wants results, not process details
-
-## Output Style
-
-Be concise and actionable:
-- State what was done
-- List files created
-- Highlight key points (3-5 bullets)
-- Provide next steps
-- Keep under 400 words unless user asks for details
-
-Remember: You're a coordinator, not a doer. Use your subagents and tools effectively!"""
+For complex tasks, delegate to subagents using the task() tool. This keeps your context clean and improves results."""
 
 
-def create_backend(runtime):
+def create_backend_factory(root_dir=None):
     """
-    Create composite backend for flexible file system routing.
+    Create a backend factory function that uses the provided root directory.
     
-    Routes:
-    - /workspace/: Project files (ephemeral per thread)
-    - /memories/: Persistent knowledge (across threads)
-    - Default: Ephemeral state
+    Args:
+        root_dir: Optional root directory for file operations. 
+                 If None, uses current working directory.
+    
+    Returns:
+        Function that creates CompositeBackend with FilesystemBackend
     """
-    return CompositeBackend(
-        default=StateBackend(runtime),
-        routes={
-            "/memories/": StoreBackend(runtime),
-            "/workspace/": StateBackend(runtime),
-        }
-    )
+    import os
+    
+    # Use provided root_dir or default to current working directory
+    if root_dir is None:
+        root_dir = os.path.abspath(os.getcwd())
+    else:
+        root_dir = os.path.abspath(root_dir)
+    
+    def create_backend(runtime):
+        """
+        Create composite backend following deepagents best practices.
+        
+        Per LangChain docs:
+        - Default: FilesystemBackend for actual filesystem access (root_dir)
+        - /memories/: StoreBackend for persistent cross-thread storage
+        """
+        # FilesystemBackend with root_dir for all file operations
+        fs_backend = FilesystemBackend(root_dir=root_dir)
+        
+        logger.debug(f"Created FilesystemBackend with root_dir={root_dir}")
+        
+        # Wrap FilesystemBackend to normalize paths
+        # When agent calls ls / or ls /workspace/, convert to empty string
+        # so FilesystemBackend uses root_dir instead of system root
+        class NormalizedFilesystemBackend:
+            """Wrapper that normalizes paths to use root_dir correctly"""
+            def __init__(self, backend):
+                self.backend = backend
+                self.cwd = backend.cwd
+            
+            def _normalize_path(self, path):
+                """Normalize path to use root_dir instead of system root"""
+                if path is None:
+                    return ''
+                if path == '/' or path == '/workspace' or path == '/workspace/':
+                    return ''  # Use root_dir
+                if path.startswith('/workspace/'):
+                    return path[len('/workspace/'):]  # Strip /workspace/ prefix
+                if path.startswith('/') and path != '/':
+                    # Strip leading / to make relative to root_dir
+                    return path.lstrip('/')
+                return path
+            
+            def ls_info(self, path):
+                normalized = self._normalize_path(path)
+                return self.backend.ls_info(normalized)
+            
+            def read(self, file_path, offset=0, limit=2000):
+                # read signature: (file_path, offset=0, limit=2000)
+                normalized_path = self._normalize_path(file_path)
+                return self.backend.read(normalized_path, offset, limit)
+            
+            def write(self, path, content):
+                normalized = self._normalize_path(path)
+                return self.backend.write(normalized, content)
+            
+            def edit(self, file_path, old_string, new_string, replace_all=False):
+                # edit signature: (file_path, old_string, new_string, replace_all=False)
+                normalized_path = self._normalize_path(file_path)
+                return self.backend.edit(normalized_path, old_string, new_string, replace_all)
+            
+            def glob_info(self, pattern, path='/'):
+                # Normalize the path parameter, not the pattern
+                normalized_path = self._normalize_path(path)
+                return self.backend.glob_info(pattern, normalized_path)
+            
+            def grep_raw(self, pattern, path=None, glob=None):
+                # grep_raw signature: (pattern, path=None, glob=None)
+                normalized_path = self._normalize_path(path) if path else None
+                normalized_glob = self._normalize_path(glob) if glob else None
+                return self.backend.grep_raw(pattern, normalized_path, normalized_glob)
+        
+        normalized_backend = NormalizedFilesystemBackend(fs_backend)
+        
+        # Per deepagents best practices: CompositeBackend
+        # Default uses normalized FilesystemBackend for actual file access
+        # /memories/ routes to StoreBackend for persistence across threads
+        return CompositeBackend(
+            default=normalized_backend,  # All file operations use normalized FilesystemBackend with root_dir
+            routes={
+                "/memories/": StoreBackend(runtime),  # Persistent storage across threads
+            }
+        )
+    
+    return create_backend
 
 
-def create_modular_agent():
+def create_modular_agent(root_dir=None):
     """
     Create the modular DevOps deep agent with CompiledSubAgent pattern.
+    
+    Args:
+        root_dir: Optional root directory for file operations.
+                 If None, uses current working directory.
+                 This is the base directory for all file system tools (ls, read_file, etc.)
     
     Returns:
         Compiled deep agent ready for invocation
     """
-    logger.info("Creating modular compiled subagents from existing agents...")
+    import os
+    
+    # Use provided root_dir or default to current working directory
+    if root_dir is None:
+        root_dir = os.path.abspath(os.getcwd())
+    else:
+        root_dir = os.path.abspath(root_dir)
+    
+    logger.info(f"Creating modular compiled subagents from existing agents (root_dir={root_dir})...")
 
     # Create compiled subagents using existing agents
     builder_subagent = CompiledSubAgent(
@@ -256,6 +204,9 @@ def create_modular_agent():
 
     logger.info("Creating modular DevOps Deep Agent with CompiledSubAgents...")
 
+    # Create backend factory with root_dir
+    backend_factory = create_backend_factory(root_dir=root_dir)
+    
     agent = create_deep_agent(
         model=DEFAULT_MODEL,
         system_prompt=DEVOPS_SUPERVISOR_PROMPT,
@@ -267,7 +218,7 @@ def create_modular_agent():
             thinker_subagent,
             watcher_subagent,
         ],
-        backend=create_backend,
+        backend=backend_factory,
         checkpointer=checkpointer,
         store=store,
     )
@@ -290,30 +241,50 @@ def create_modular_agent():
     return agent
 
 
-# Create agent instance (singleton)
-_agent = None
+# Store agents by root_dir (support multiple project roots)
+_agents = {}
 
 
-def get_agent():
-    """Get or create the agent instance."""
-    global _agent
-    if _agent is None:
-        _agent = create_modular_agent()
-    return _agent
+def get_agent(root_dir=None):
+    """
+    Get or create the agent instance for a specific root directory.
+    
+    Args:
+        root_dir: Optional root directory. If None, uses current working directory.
+                 Different root directories get different agent instances.
+    
+    Returns:
+        Agent instance for the specified root directory
+    """
+    import os
+    
+    # Normalize root_dir for use as cache key
+    if root_dir is None:
+        cache_key = os.path.abspath(os.getcwd())
+    else:
+        cache_key = os.path.abspath(root_dir)
+    
+    if cache_key not in _agents:
+        _agents[cache_key] = create_modular_agent(root_dir=root_dir)
+    
+    return _agents[cache_key]
 
 
-def invoke_modular_agent(message: str, thread_id: str = "default"):
+def invoke_modular_agent(message: str, thread_id: str = "default", root_dir: str = None):
     """
     Invoke the modular DevOps deep agent.
     
     Args:
         message: User's request
         thread_id: Thread ID for conversation persistence
+        root_dir: Optional root directory for file operations.
+                 If None, uses current working directory.
+                 This determines where file system tools (ls, read_file, etc.) operate.
         
     Returns:
         Agent response with messages, todos, etc.
     """
-    agent = get_agent()
+    agent = get_agent(root_dir=root_dir)
     
     config = {
         "configurable": {
