@@ -16,7 +16,7 @@ Usage:
     )
 """
 
-from .main import create_modular_agent, invoke_modular_agent
+from .main import create_modular_agent, invoke_modular_agent, invoke_modular_agent_async
 
-__all__ = ["create_modular_agent", "invoke_modular_agent"]
+__all__ = ["create_modular_agent", "invoke_modular_agent", "invoke_modular_agent_async"]
 

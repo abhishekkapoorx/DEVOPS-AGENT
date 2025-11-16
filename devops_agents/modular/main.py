@@ -13,6 +13,7 @@ from deepagents import create_deep_agent, CompiledSubAgent
 from deepagents.backends import CompositeBackend, StateBackend, StoreBackend, FilesystemBackend
 from langgraph.store.memory import InMemoryStore
 from langgraph.checkpoint.memory import MemorySaver
+from langchain_core.runnables import Runnable
 
 from llms import DEFAULT_MODEL
 from tools.TerminalTool import shell_tool
@@ -25,6 +26,48 @@ from .subagents import (
 )
 from loguru import logger
 import os
+
+
+def ensure_sync_runnable(runnable: Runnable) -> Runnable:
+    """
+    Ensure a runnable supports synchronous invocation for deepagents.
+    
+    deepagents requires subagents to have a synchronous invoke method.
+    This wrapper ensures the runnable can be called synchronously.
+    
+    Args:
+        runnable: The compiled LangGraph to wrap
+        
+    Returns:
+        Runnable that supports synchronous invocation
+    """
+    class SyncRunnableWrapper(Runnable):
+        """Wrapper to ensure synchronous invocation"""
+        def __init__(self, wrapped):
+            super().__init__()
+            self.wrapped = wrapped
+            # Copy attributes that might be needed
+            for attr in ['name', 'graph', 'nodes', 'edges']:
+                if hasattr(wrapped, attr):
+                    setattr(self, attr, getattr(wrapped, attr))
+        
+        def invoke(self, input, config=None, **kwargs):
+            """Synchronous invoke - delegates to wrapped runnable"""
+            return self.wrapped.invoke(input, config, **kwargs)
+        
+        def ainvoke(self, input, config=None, **kwargs):
+            """Async invoke - delegates to wrapped runnable"""
+            return self.wrapped.ainvoke(input, config, **kwargs)
+        
+        def stream(self, input, config=None, **kwargs):
+            """Stream - delegates to wrapped runnable"""
+            return self.wrapped.stream(input, config, **kwargs)
+        
+        def astream(self, input, config=None, **kwargs):
+            """Async stream - delegates to wrapped runnable"""
+            return self.wrapped.astream(input, config, **kwargs)
+    
+    return SyncRunnableWrapper(runnable)
 
 
 # Main supervisor system prompt
@@ -79,64 +122,11 @@ def create_backend_factory(root_dir=None):
         
         logger.debug(f"Created FilesystemBackend with root_dir={root_dir}")
         
-        # Wrap FilesystemBackend to normalize paths
-        # When agent calls ls / or ls /workspace/, convert to empty string
-        # so FilesystemBackend uses root_dir instead of system root
-        class NormalizedFilesystemBackend:
-            """Wrapper that normalizes paths to use root_dir correctly"""
-            def __init__(self, backend):
-                self.backend = backend
-                self.cwd = backend.cwd
-            
-            def _normalize_path(self, path):
-                """Normalize path to use root_dir instead of system root"""
-                if path is None:
-                    return ''
-                if path == '/' or path == '/workspace' or path == '/workspace/':
-                    return ''  # Use root_dir
-                if path.startswith('/workspace/'):
-                    return path[len('/workspace/'):]  # Strip /workspace/ prefix
-                if path.startswith('/') and path != '/':
-                    # Strip leading / to make relative to root_dir
-                    return path.lstrip('/')
-                return path
-            
-            def ls_info(self, path):
-                normalized = self._normalize_path(path)
-                return self.backend.ls_info(normalized)
-            
-            def read(self, file_path, offset=0, limit=2000):
-                # read signature: (file_path, offset=0, limit=2000)
-                normalized_path = self._normalize_path(file_path)
-                return self.backend.read(normalized_path, offset, limit)
-            
-            def write(self, path, content):
-                normalized = self._normalize_path(path)
-                return self.backend.write(normalized, content)
-            
-            def edit(self, file_path, old_string, new_string, replace_all=False):
-                # edit signature: (file_path, old_string, new_string, replace_all=False)
-                normalized_path = self._normalize_path(file_path)
-                return self.backend.edit(normalized_path, old_string, new_string, replace_all)
-            
-            def glob_info(self, pattern, path='/'):
-                # Normalize the path parameter, not the pattern
-                normalized_path = self._normalize_path(path)
-                return self.backend.glob_info(pattern, normalized_path)
-            
-            def grep_raw(self, pattern, path=None, glob=None):
-                # grep_raw signature: (pattern, path=None, glob=None)
-                normalized_path = self._normalize_path(path) if path else None
-                normalized_glob = self._normalize_path(glob) if glob else None
-                return self.backend.grep_raw(pattern, normalized_path, normalized_glob)
-        
-        normalized_backend = NormalizedFilesystemBackend(fs_backend)
-        
         # Per deepagents best practices: CompositeBackend
-        # Default uses normalized FilesystemBackend for actual file access
+        # Default uses FilesystemBackend for actual file access
         # /memories/ routes to StoreBackend for persistence across threads
         return CompositeBackend(
-            default=normalized_backend,  # All file operations use normalized FilesystemBackend with root_dir
+            default=fs_backend,  # All file operations use FilesystemBackend with root_dir
             routes={
                 "/memories/": StoreBackend(runtime),  # Persistent storage across threads
             }
@@ -168,6 +158,7 @@ def create_modular_agent(root_dir=None):
     logger.info(f"Creating modular compiled subagents from existing agents (root_dir={root_dir})...")
 
     # Create compiled subagents using existing agents
+    # Wrap each agent to ensure synchronous invocation support for deepagents
     builder_subagent = CompiledSubAgent(
         name="builder_expert",
         description="Builder expert for containerization and orchestration. Manages Docker and Kubernetes tasks. Use for creating Dockerfiles, docker-compose files, K8s manifests, and Helm charts. Includes reflection and quality assurance.",
@@ -270,9 +261,9 @@ def get_agent(root_dir=None):
     return _agents[cache_key]
 
 
-def invoke_modular_agent(message: str, thread_id: str = "default", root_dir: str = None):
+async def invoke_modular_agent_async(message: str, thread_id: str = "default", root_dir: str = None, stream: bool = False):
     """
-    Invoke the modular DevOps deep agent.
+    Invoke the modular DevOps deep agent asynchronously.
     
     Args:
         message: User's request
@@ -280,10 +271,14 @@ def invoke_modular_agent(message: str, thread_id: str = "default", root_dir: str
         root_dir: Optional root directory for file operations.
                  If None, uses current working directory.
                  This determines where file system tools (ls, read_file, etc.) operate.
+        stream: If True, stream outputs showing tool calls, subagent calls, and AI messages
         
     Returns:
         Agent response with messages, todos, etc.
     """
+    from loguru import logger
+    from langchain_core.messages import AIMessage, ToolMessage, HumanMessage
+    
     agent = get_agent(root_dir=root_dir)
     
     config = {
@@ -292,11 +287,106 @@ def invoke_modular_agent(message: str, thread_id: str = "default", root_dir: str
         }
     }
     
-    result = agent.invoke({
-        "messages": [{"role": "user", "content": message}]
-    }, config=config)
+    if stream:
+        # Stream the execution to show tool calls, subagent calls, and messages
+        logger.info("📡 Streaming agent execution (async)...\n")
+        
+        final_result = None
+        async for chunk in agent.astream({
+            "messages": [{"role": "user", "content": message}]
+        }, config=config):
+            # Process each chunk - handle different chunk types
+            if not isinstance(chunk, dict):
+                # Skip non-dict chunks (like Overwrite objects)
+                continue
+            
+            for node_name, node_output in chunk.items():
+                # Skip if node_output is not a dict (e.g., Overwrite objects)
+                if not isinstance(node_output, dict):
+                    continue
+                
+                if "messages" in node_output:
+                    messages = node_output["messages"]
+                    # Handle both list and single message
+                    if not isinstance(messages, list):
+                        messages = [messages]
+                    
+                    for msg in messages:
+                        if isinstance(msg, AIMessage):
+                            # Check if it's a tool call
+                            if hasattr(msg, "tool_calls") and msg.tool_calls:
+                                for tool_call in msg.tool_calls:
+                                    tool_name = tool_call.get("name", "unknown")
+                                    tool_args = tool_call.get("args", {})
+                                    
+                                    # Check if it's a subagent call (task tool)
+                                    if tool_name == "task":
+                                        subagent_name = tool_args.get("name", "unknown")
+                                        task_description = tool_args.get("task", "")
+                                        logger.info(f"🤖 Subagent Call: {subagent_name}")
+                                        if task_description:
+                                            logger.info(f"   Task: {task_description[:100]}{'...' if len(task_description) > 100 else ''}")
+                                    else:
+                                        # Regular tool call
+                                        logger.info(f"🔧 Tool Call: {tool_name}")
+                                        if tool_args:
+                                            # Show key args (truncate long values)
+                                            args_str = ", ".join([
+                                                f"{k}={str(v)[:50]}{'...' if len(str(v)) > 50 else ''}"
+                                                for k, v in tool_args.items()
+                                            ])
+                                            if args_str:
+                                                logger.info(f"   Args: {args_str}")
+                            # Regular AI message (no tool calls)
+                            elif msg.content and len(str(msg.content).strip()) > 0:
+                                content = str(msg.content).strip()
+                                # Only show if it's substantial (not just empty or tool responses)
+                                if len(content) > 20:
+                                    logger.info(f"💬 AI: {content[:200]}{'...' if len(content) > 200 else ''}")
+                        elif isinstance(msg, ToolMessage):
+                            tool_name = getattr(msg, "name", "unknown")
+                            content = str(msg.content)[:200] if msg.content else ""
+                            logger.info(f"✅ Tool Result ({tool_name}): {content}{'...' if len(str(msg.content or '')) > 200 else ''}")
+                        elif isinstance(msg, HumanMessage):
+                            # Skip user messages in stream
+                            pass
+            
+            # Keep track of final result (only if it's a dict with messages)
+            if isinstance(chunk, dict):
+                for node_output in chunk.values():
+                    if isinstance(node_output, dict) and "messages" in node_output:
+                        final_result = node_output
+                        break
+        
+        return final_result if final_result else {"messages": []}
+    else:
+        # Non-streaming mode
+        result = await agent.ainvoke({
+            "messages": [{"role": "user", "content": message}]
+        }, config=config)
+        
+        return result
+
+
+def invoke_modular_agent(message: str, thread_id: str = "default", root_dir: str = None, stream: bool = False):
+    """
+    Invoke the modular DevOps deep agent (synchronous wrapper for async).
     
-    return result
+    Args:
+        message: User's request
+        thread_id: Thread ID for conversation persistence
+        root_dir: Optional root directory for file operations.
+                 If None, uses current working directory.
+                 This determines where file system tools (ls, read_file, etc.) operate.
+        stream: If True, stream outputs showing tool calls, subagent calls, and AI messages
+        
+    Returns:
+        Agent response with messages, todos, etc.
+    """
+    import asyncio
+    
+    # Run the async version
+    return asyncio.run(invoke_modular_agent_async(message, thread_id, root_dir, stream))
 
 
 if __name__ == "__main__":

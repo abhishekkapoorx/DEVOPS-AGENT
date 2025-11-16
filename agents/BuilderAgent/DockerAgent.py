@@ -221,9 +221,9 @@ def create_docker_agent() -> StateGraph:
             # Create revision prompt
             revision_message = f"""Based on this quality review, please revise the Docker configurations:
 
-Critique: {critique}
+                Critique: {critique}
 
-Please improve the Dockerfile and docker-compose.yml to address these concerns."""
+                Please improve the Dockerfile and docker-compose.yml to address these concerns."""
             
             messages = state.get("messages", [])
             messages = messages + [HumanMessage(content=revision_message)]

@@ -27,7 +27,8 @@ logger.add(
 )
 
 
-def main():
+async def main_async():
+    """Async version of main function."""
     parser = argparse.ArgumentParser(
         description="DEVOPS-AGENT - Intelligent DevOps Automation",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -79,7 +80,7 @@ Implementations:
     
     # Display banner
     logger.info("="*60)
-    logger.info("🚀 DEVOPS-AGENT - Intelligent DevOps Automation")
+    logger.info("🚀 DEVOPS-AGENT - Intelligent DevOps Automation (Async Mode)")
     logger.info("="*60)
     logger.info(f"Implementation: {args.impl}")
     logger.info(f"Thread ID: {args.thread_id}")
@@ -89,23 +90,27 @@ Implementations:
     
     # Import the appropriate implementation
     if args.impl == "modular":
-        from devops_agents.modular import invoke_modular_agent
+        from devops_agents.modular import invoke_modular_agent_async
         logger.info("✓ Using Modular CompiledSubAgent with existing agents (RECOMMENDED)")
-        # Use the function directly - root_dir will be passed explicitly
-        invoke = invoke_modular_agent
+        logger.info("✓ Running in async mode")
+        # Use the async function directly
+        invoke_async = invoke_modular_agent_async
     else:  # custom
         from custom import invoke_custom_agent
-        # Custom uses different signature
-        def invoke(message, thread_id, root_dir=None):
+        # Custom uses different signature - wrap in async
+        async def invoke_async(message, thread_id, root_dir=None, stream=False):
             # root_dir ignored for custom implementation
-            return invoke_custom_agent(message, session_id=thread_id)
+            # stream parameter ignored for custom (not implemented yet)
+            import asyncio
+            loop = asyncio.get_event_loop()
+            return await loop.run_in_executor(None, lambda: invoke_custom_agent(message, session_id=thread_id))
         logger.info("✓ Using Custom Deep Agents")
     
     logger.info("")
     
     # Interactive mode
     if args.interactive or not args.message:
-        logger.info("Starting interactive mode. Type 'exit' or 'quit' to exit.\n")
+        logger.info("Starting interactive mode (async). Type 'exit' or 'quit' to exit.\n")
         
         while True:
             try:
@@ -122,19 +127,24 @@ Implementations:
                 
                 # Pass root_dir if it's the modular implementation
                 if args.impl == "modular":
-                    result = invoke(message, thread_id=args.thread_id, root_dir=args.root_dir)
+                    result = await invoke_async(message, thread_id=args.thread_id, root_dir=args.root_dir, stream=True)
                 else:
-                    result = invoke(message, args.thread_id)
+                    result = await invoke_async(message, args.thread_id, stream=True)
                 
-                response = result["messages"][-1].content
-                
-                logger.info(f"Agent: {response}\n")
+                # Streaming is handled inside invoke, so result is already the final response
+                if isinstance(result, dict) and "messages" in result:
+                    response = result["messages"][-1].content
+                    logger.info(f"Agent: {response}\n")
+                else:
+                    logger.info(f"Agent: {result}\n")
                 
             except KeyboardInterrupt:
                 logger.info("\n\nGoodbye! 👋")
                 break
             except Exception as e:
                 logger.error(f"Error: {e}")
+                import traceback
+                traceback.print_exc()
     
     # Single message mode
     else:
@@ -144,18 +154,29 @@ Implementations:
         try:
             # Pass root_dir if it's the modular implementation
             if args.impl == "modular":
-                result = invoke(args.message, thread_id=args.thread_id, root_dir=args.root_dir)
+                result = await invoke_async(args.message, thread_id=args.thread_id, root_dir=args.root_dir, stream=True)
             else:
-                result = invoke(args.message, args.thread_id)
+                result = await invoke_async(args.message, args.thread_id, stream=True)
             
-            response = result["messages"][-1].content
-            
-            logger.info(f"Agent: {response}\n")
+            # Streaming is handled inside invoke, so result is already the final response
+            if isinstance(result, dict) and "messages" in result:
+                response = result["messages"][-1].content
+                logger.info(f"Agent: {response}\n")
+            else:
+                logger.info(f"Agent: {result}\n")
             logger.info("="*60)
             
         except Exception as e:
             logger.error(f"Error: {e}")
+            import traceback
+            traceback.print_exc()
             sys.exit(1)
+
+
+def main():
+    """Main entry point - runs async main in event loop."""
+    import asyncio
+    asyncio.run(main_async())
 
 
 if __name__ == "__main__":

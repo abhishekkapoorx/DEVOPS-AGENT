@@ -25,33 +25,36 @@ class ReflectionNode:
     
     DEFAULT_REFLECTION_PROMPT = """You are a critical evaluator reviewing the work of an AI agent.
     
-Analyze the agent's recent actions and outputs, considering:
-1. **Correctness**: Are the outputs accurate and appropriate?
-2. **Completeness**: Does it fully address the user's request?
-3. **Quality**: Is the work of high quality and following best practices?
-4. **Efficiency**: Could this be done more efficiently?
-5. **Safety**: Are there any security or safety concerns?
+        Analyze the agent's recent act`ions and outputs, considering:
+        1. **Correctness**: Are the outputs accurate and appropriate?
+        2. **Completeness**: Does it fully address the user's request?
+        3. **Quality**: Is the work of high quality and following best practices?
+        4. **Efficiency**: Could this be done more efficiently?
+        5. **Safety**: Are there any security or safety concerns?
 
-Provide:
-- A confidence score (0.0 to 1.0) indicating how confident you are in the work
-- Specific critique pointing out issues or areas for improvement
-- A recommendation on whether the agent should revise its work (YES/NO)
+        Provide:
+        - A confidence score (0.0 to 1.0) indicating how confident you are in the work
+        - Specific critique pointing out issues or areas for improvement
+        - A recommendation on whether the agent should revise its work (YES/NO)
 
-Format your response as:
-CONFIDENCE: <score>
-SHOULD_REVISE: <YES/NO>
-CRITIQUE: <detailed critique>"""
+        Format your response as:
+        CONFIDENCE: <score>
+        SHOULD_REVISE: <YES/NO>
+        CRITIQUE: <detailed `critique>
+    """
     
-    DEFAULT_REVISION_PROMPT = """Based on the following critique of your previous work, 
-provide an improved version that addresses the identified issues.
+    DEFAULT_REVISION_PROMPT = """
+        Based on the following critique of your previous work, 
+        provide an improved version that addresses the identified issues.
 
-Previous Work:
-{previous_work}
+        Previous Work:
+        {previous_work}
 
-Critique:
-{critique}
+        Critique:
+        {critique}
 
-Provide your revised approach or output."""
+        Provide your revised approach or output.
+    """
     
     def __init__(
         self,
