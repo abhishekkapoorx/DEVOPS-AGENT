@@ -1,15 +1,39 @@
 
 from langgraph_supervisor import create_supervisor
 
-from llms import DEFAULT_MODEL
+from llms import DEFAULT_MODEL, openai_models
+from tools.HandOffs.builder import docker_agent_handoff, k8s_agent_handoff
+
+from utils.context_middleware import (
+    bind_context_before_model,
+    bind_context_for_tools,
+)
+from utils.agent_hooks import build_combined_pre_model_hook
 
 from .DockerAgent import agent as docker_agent
 from .K8sAgent import agent as k8s_agent
 
+builder_pre_model_hook = build_combined_pre_model_hook(
+    model=DEFAULT_MODEL,
+    rag_retriever=None,
+    trim_kwargs={
+        "max_messages": 5,
+        "summarize_old": True,
+    },
+    planning_kwargs={
+        "min_messages_for_update": 5,
+        "max_plan_versions": 3,
+    },
+)
+
 agent = create_supervisor(
-    supervisor_name="builder_agent",
+    supervisor_name="docker-k8s-handler",
     model=DEFAULT_MODEL,
     agents=[docker_agent, k8s_agent],
+    tools=[
+        docker_agent_handoff,
+        k8s_agent_handoff
+    ],
     prompt=(
         "You are a Builder Agent Supervisor responsible for orchestrating containerization and orchestration tasks. "
         "You manage a team of specialized agents to handle different aspects of application deployment and infrastructure management.\n\n"
@@ -99,4 +123,6 @@ agent = create_supervisor(
     ),
     add_handoff_back_messages=True,
     output_mode="full_history",
-).compile(name="builder_agent").with_config({"recursion_limit": 150})
+    pre_model_hook=builder_pre_model_hook,
+    middleware=[bind_context_before_model, bind_context_for_tools],
+).compile(name="docker-k8s-handler").with_config({"recursion_limit": 150})

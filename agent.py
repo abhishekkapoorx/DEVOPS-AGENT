@@ -1,4 +1,3 @@
-from langgraph_supervisor.handoff import create_handoff_tool
 from llms import DEFAULT_MODEL
 from agents.CloudAgent import agent as CloudAgent
 from agents.BuilderAgent import agent as BuilderAgent
@@ -6,40 +5,86 @@ from agents.CoderAgent import agent as CoderAgent
 from langgraph_supervisor import create_supervisor
 from tools import run_windows_command
 from tools.TerminalTool import shell_tool
+from tools.HandOffs.agent import (
+    cloud_agent_handoff,
+    docker_k8s_handoff,
+    coder_agent_handoff
+)
+from utils.plan_state import PlanState
+from utils.agent_hooks import build_combined_pre_model_hook
+from utils.rag import get_pinecone_retriever
+from utils.context import AgentContext, set_working_directory_context
+from utils.context_middleware import (
+    bind_context_before_model,
+    bind_context_for_tools,
+)
+
+from loguru import logger
+
+# Optional RAG hook sourced from Pinecone
+rag_retriever = get_pinecone_retriever()
+if rag_retriever:
+    logger.info("Pinecone retriever loaded for RAG context.")
+else:
+    logger.warning("Pinecone retriever unavailable; proceeding without RAG context.")
+
+combined_pre_model_hook = build_combined_pre_model_hook(
+    model=DEFAULT_MODEL,
+    rag_retriever=rag_retriever,
+    trim_kwargs={
+        "max_messages": 5,
+        "summarize_old": True,
+    },
+    planning_kwargs={
+        "min_messages_for_update": 5,
+        "max_plan_versions": 3,
+    },
+)
+
 
 SUPERVISOR_PROMPT = """ 
-You are an supervisor agent specialized in DEVOPS TASKS - please keep going until the user's query is completely resolved, before ending your turn and yielding back to the user. Only terminate your turn when you are sure that the problem is solved.
+# Role and Objective
+You supervise DevOps-related automation, orchestrating specialized agent workflows to fully resolve user requests before ending your turn.
 
-If you are not sure about file content or codebase structure pertaining to the user's request, use your tools to read files and gather the relevant information: do NOT guess or make up an answer.
+You have access to a planning system that creates and updates task plans as needed. The plan is automatically managed and will evolve based on progress and changing requirements.
 
-You MUST plan extensively before each function call, and reflect extensively on the outcomes of the previous function calls. DO NOT do this entire process by making function calls only, as this can impair your ability to solve the problem and think insightfully.
+Begin with a concise checklist (3-7 bullets) of the conceptual steps required to resolve the user request before performing substantive work.
 
+# Instructions
+- Persist until the user's query is comprehensively solved.
+- Do not return control until you verify completion.
+- After each agent action, validate the result in 1-2 lines and proceed or self-correct if validation fails.
+- If necessary information is missing (e.g., file contents, codebase structure), always use tool access to gather it. Never assume or guess.
+- Use Think-Plan-Act-Reflect before each function call:
+  * THINK: Analyze the request, determine requirements and challenges.
+  * PLAN: Develop clear, sequenced steps and ensure rollback strategies.
+  * ACT: Direct agents to use available tools to execute -- you delegate, never act directly or in parallel.
+  * REFLECT: Inspect results, adapt approach, and keep iterating until task is fully done.
+- Delegate only one agent per turn (no parallelization). You never perform the work personally.
+- Ensure agents act autonomously with full tool access; agents must never ask the user for manual intervention.
+- When safety is a concern (re: destructive actions), default to safe procedures: dry-runs, diffs, changes limited to local workspace unless explicitly authorized. For irreversible actions, require explicit user confirmation, and mask/anonymize any PII in outputs.
+- If the request is ambiguous or crosses agent domains, clarify requirements with targeted questions before delegating. Attempt a first pass autonomously unless missing critical information; stop and ask if success criteria are unmet or conflicts arise.
 
+# **Information Gathering**: If you lack project information (file contents, codebase structure, dependencies, configuration), you MUST actively gather it using available tools BEFORE making assumptions:
+  * Use `grep` or search commands to find relevant code, configurations, or references
+  * Use directory listing tools (`ls`, `list_dir`, etc.) to explore project structure
+  * Read relevant files to understand context, dependencies, and existing patterns
+  * Search for similar implementations or patterns in the codebase
+  * Never assume file locations, dependencies, or project structure - always verify through tools
 
-Supervisor policies:
-- Single delegation: one agent per turn; no parallel calls; you never do the work yourself.
-- Agent autonomy: instruct agents to use their tools directly and complete tasks independently. Agents should NOT ask users to perform manual work.
-- Tool usage: agents must leverage their available tools (file management, terminal commands, cloud APIs) to accomplish tasks without user intervention.
-- Think-Plan-Act-Reflect cycle: Instruct agents to:
-  * THINK: Analyze the request, understand requirements, identify potential challenges and dependencies
-  * PLAN: Create a step-by-step approach, identify required tools/actions, consider edge cases and rollback strategies
-  * ACT: Execute the plan using available tools, monitor progress, handle errors gracefully
-  * REFLECT: Evaluate outcomes, identify what worked/didn't work, adjust approach if needed, iterate until complete
-- Clarify first: if the request is ambiguous or spans multiple agents, ask targeted questions before assigning.
-- Safety: avoid destructive operations without confirmation; prefer dry-runs and diffs; keep changes local via Coder Agent unless explicitly authorized.
+# Routing Policies
+- Send local code or file operations to `Coder Agent` (file editing, code changes, directory management).
+- Send Docker/container/build tasks to `Builder Agent`.
+- Direct Kubernetes or Helm tasks to `Builder Agent`.
+- Route cloud infrastructure or resource provisioning (AWS, GCP, Azure, VPCs, IAM, managed services) to `Cloud Agent`.
 
-Routing rubric:
-- Local code or file ops → Coder Agent (read/write/edit files, create directories, update code).
-- Dockerfiles, container builds, images, Compose, registries → Builder Agent.
-- Kubernetes manifests, Helm, cluster resources → Builder Agent.
-- Cloud infra (AWS/Azure/GCP), VPC/networking, IAM, managed services, cloud deployments → Cloud Agent.
+# Output Discipline
+- Every agent assignment must explain the rationale ('Assignment') and state the clear next expected deliverable ('Next step').
 
-Examples:
+# Example Delegation
 - 'Create a new module and update imports' → Coder Agent.
-- 'Write a Dockerfile and push image' → Builder Agent.
-- 'Provision an S3 bucket and IAM policy' → Cloud Agent.
-
-Output discipline: include a brief 'Assignment' rationale and expected 'Next step' deliverable from the chosen agent.
+- 'Write a Dockerfile and push image' → docker-k8s-handler.
+- 'Provision S3 bucket and IAM policy' → Cloud Agent.
 """
 
 supervisor = (
@@ -50,60 +95,16 @@ supervisor = (
         tools=[
             run_windows_command,
             shell_tool,
-            create_handoff_tool(
-                agent_name="cloud_agent",
-                name="cloud_agent",
-                description="""
-                Handoff to CloudAgent (cloud supervisor) for cloud infrastructure tasks.
-
-                Scope:
-                - Provisioning and managing resources on AWS, Azure, and GCP
-                - IAM/policies, networking (VPC/VNet/VPC), storage, compute, databases
-                - Deploying managed services and performing cloud-native operations
-
-                Behavior:
-                - Routes tasks to the appropriate cloud sub-agent (AWS/Azure/GCP)
-                - Operates autonomously using provider APIs and tools; no manual user steps
-                - Provides assignment rationale and next-step deliverables on handoff back
-                """
-            ),
-            create_handoff_tool(
-                agent_name="builder_agent",
-                name="builder_agent",
-                description="""
-                Handoff to BuilderAgent (container/orchestration supervisor) for build and runtime infra.
-
-                Scope:
-                - Dockerfiles, image builds, registries, Compose setups
-                - Kubernetes manifests, Helm charts, deployments, services, ingress
-                - Runtime config: env, secrets, volumes, networking, autoscaling, observability
-
-                Behavior:
-                - Routes tasks to Docker or Kubernetes sub-agents as appropriate
-                - Operates autonomously using CLI/APIs; avoids requiring manual user steps
-                - Returns with rationale and concrete next-step deliverables after completion
-                """
-            ),
-            create_handoff_tool(
-                agent_name="coder_agent",
-                name="coder_agent",
-                description="""
-                Handoff to CoderAgent for local code and file operations.
-
-                Scope:
-                - Create, read, edit, delete, and organize files within the workspace
-                - Refactors, boilerplate generation, code updates, and small utilities
-                - Project scaffolding and module/file restructuring
-
-                Behavior:
-                - Uses file management tools autonomously; no manual user steps
-                - Verifies changes and returns with a concise summary of edits
-                """
-            )
+            cloud_agent_handoff,
+            docker_k8s_handoff,
+            coder_agent_handoff
         ],
         prompt=SUPERVISOR_PROMPT,
         add_handoff_back_messages=True,
-        output_mode="full_history",
+        output_mode="last_message",
+        state_schema=PlanState,
+        middleware=[bind_context_before_model, bind_context_for_tools],
+        pre_model_hook=combined_pre_model_hook
     )
     .compile(name="supervisor")
     .with_config({"recursion_limit": 150})
