@@ -3,6 +3,10 @@ __pycache__/
 *.py[codz]
 *$py.class
 
+tests/
+codebase_indexing/
+extension
+neo4j.txt
 # C extensions
 *.so
 
