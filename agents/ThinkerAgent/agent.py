@@ -1,24 +1,16 @@
 """
-Thinker Agent - Strategic Planning and Reflection
+Thinker Agent - DeepAgents Architecture
 
-This deep agent specializes in:
-- High-level strategic analysis and planning
-- Risk assessment and mitigation strategies
-- Alternative approach evaluation
-- Decision rationale and reasoning
-- Success criteria definition
+This agent uses deepagents for strategic planning and reflection.
 """
 
-from langchain.agents import create_agent
-from langgraph.graph import StateGraph, START, END
-from langgraph.prebuilt import ToolNode
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-from typing import Dict, Any
+from deepagents import create_deep_agent
+from deepagents.backends import CompositeBackend, StoreBackend, FilesystemBackend
+from langgraph.store.memory import InMemoryStore
+from langgraph.checkpoint.memory import MemorySaver
 from loguru import logger
 
 from llms import DEFAULT_MODEL
-from utils.deep_agent_state import ThinkerAgentState, create_initial_reflection_state
-from utils.reflection import ReflectionNode, should_continue_or_reflect
 from utils.context_middleware import (
     bind_context_before_model,
     bind_context_for_tools,
@@ -101,141 +93,47 @@ Structure your responses as:
 Begin by awaiting strategic questions or planning requests."""
 
 
-def create_thinker_agent() -> StateGraph:
+def create_thinker_agent():
     """
-    Create the Thinker Agent with reflection capabilities.
+    Create Thinker Agent using deepagents architecture.
     
     Returns:
-        Compiled LangGraph with thinker agent nodes
+        Compiled deep agent ready for invocation
     """
+    logger.info("Creating Thinker Agent with deepagents architecture...")
     
-    # Create the agent with strategic thinking capabilities
-    agent = create_agent(
+    # Create backend factory
+    def create_backend(runtime):
+        """Create composite backend for file operations."""
+        import os
+        root_dir = os.path.abspath(os.getcwd())
+        fs_backend = FilesystemBackend(root_dir=root_dir)
+        return CompositeBackend(
+            default=fs_backend,
+            routes={
+                "/memories/": StoreBackend(runtime),
+            }
+        )
+    
+    # Create checkpointer and store
+    checkpointer = MemorySaver()
+    store = InMemoryStore()
+    
+    # Create the deep agent
+    agent = create_deep_agent(
         model=DEFAULT_MODEL,
-        tools=[],  # Thinker agent primarily uses reasoning, not tools
-        name="thinker_agent",
         system_prompt=THINKER_AGENT_PROMPT,
-        middleware=[bind_context_before_model, bind_context_for_tools],
+        tools=[],  # Thinker agent primarily uses reasoning, not tools
+        subagents=[],  # Thinker agent is standalone
+        backend=create_backend,
+        checkpointer=checkpointer,
+        store=store,
     )
     
-    # Create reflection node for self-critique
-    reflection_node = ReflectionNode(
-        model=DEFAULT_MODEL,
-        min_confidence_threshold=0.8,  # High bar for strategic thinking
-        max_reflection_iterations=3,
-    )
+    logger.info("✅ Thinker Agent created with deepagents architecture!")
     
-    # Define agent node
-    async def thinker_node(state: ThinkerAgentState) -> Dict[str, Any]:
-        """Main thinker agent node."""
-        try:
-            logger.info("Thinker Agent: Starting strategic analysis")
-            
-            # Invoke the agent
-            result = await agent.ainvoke(state)
-            
-            # Extract strategic components from response
-            messages = result.get("messages", [])
-            if messages:
-                last_message = messages[-1]
-                content = last_message.content if hasattr(last_message, 'content') else str(last_message)
-                
-                # Parse strategic analysis (simple heuristic)
-                strategic_analysis = content
-                
-                # Update working memory with analysis
-                working_memory = state.get("working_memory", {})
-                working_memory["latest_strategic_analysis"] = strategic_analysis
-                
-                return {
-                    **result,
-                    "strategic_analysis": strategic_analysis,
-                    "working_memory": working_memory,
-                    "current_step": "strategic_analysis_complete",
-                }
-            
-            return result
-            
-        except Exception as e:
-            logger.error(f"Thinker Agent error: {e}")
-            return {
-                **state,
-                "last_error": str(e),
-                "errors": state.get("errors", []) + [{"error": str(e), "node": "thinker"}],
-            }
-    
-    # Define reflection node wrapper
-    async def reflect_node(state: ThinkerAgentState) -> Dict[str, Any]:
-        """Reflection node for self-critique."""
-        logger.info("Thinker Agent: Performing self-reflection")
-        return reflection_node.reflect(state)
-    
-    # Define revision node
-    async def revise_node(state: ThinkerAgentState) -> Dict[str, Any]:
-        """Revision node to improve strategic analysis."""
-        try:
-            critique = state.get("critique", "")
-            strategic_analysis = state.get("strategic_analysis", "")
-            
-            revision_prompt = f"""Based on this critique of your strategic analysis, provide an improved version.
-
-Previous Analysis:
-{strategic_analysis}
-
-Critique:
-{critique}
-
-Provide your revised strategic analysis addressing the critique."""
-            
-            messages = state.get("messages", [])
-            messages = messages + [HumanMessage(content=revision_prompt)]
-            
-            result = await agent.ainvoke({**state, "messages": messages})
-            
-            return {
-                **result,
-                "should_revise": False,  # Reset after revision
-            }
-            
-        except Exception as e:
-            logger.error(f"Revision error: {e}")
-            return state
-    
-    # Routing function
-    def route_after_reflection(state: ThinkerAgentState) -> str:
-        """Determine whether to revise or finish."""
-        should_revise = state.get("should_revise", False)
-        revision_count = state.get("revision_count", 0)
-        max_revisions = state.get("max_revisions", 3)
-        
-        if should_revise and revision_count < max_revisions:
-            return "revise"
-        return "end"
-    
-    # Build the graph
-    graph = StateGraph(ThinkerAgentState)
-    
-    # Add nodes
-    graph.add_node("think", thinker_node)
-    graph.add_node("reflect", reflect_node)
-    graph.add_node("revise", revise_node)
-    
-    # Add edges
-    graph.add_edge(START, "think")
-    graph.add_edge("think", "reflect")
-    graph.add_conditional_edges(
-        "reflect",
-        route_after_reflection,
-        {
-            "revise": "revise",
-            "end": END,
-        }
-    )
-    graph.add_edge("revise", "reflect")
-    
-    return graph
+    return agent
 
 
-# Create and compile the agent
-agent = create_thinker_agent().compile(name="thinker_agent").with_config({"recursion_limit": 150})
-
+# Create the agent instance
+agent = create_thinker_agent()
