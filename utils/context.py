@@ -164,7 +164,7 @@ def set_working_directory_context(
 
 def get_context_from_runtime(runtime) -> Optional[AgentContext]:
     """
-    Extract context from LangGraph runtime object.
+    Extract context from LangGraph runtime object or config.
     
     This helper function allows tools and middleware to access the context
     that was passed when invoking the agent.
@@ -173,6 +173,7 @@ def get_context_from_runtime(runtime) -> Optional[AgentContext]:
     ----------
     runtime
         The runtime object from LangGraph (available in middleware hooks)
+        May also be a dict with 'config' key containing configurable context
     
     Returns
     -------
@@ -191,8 +192,30 @@ def get_context_from_runtime(runtime) -> Optional[AgentContext]:
     >>>         # Use working_dir in your logic
     >>>     return handler(request)
     """
+    # Try runtime.context attribute first
     if hasattr(runtime, "context"):
         return runtime.context
+    
+    # Try config.configurable.context (for deepagents/LangGraph)
+    if isinstance(runtime, dict):
+        config = runtime.get("config", {})
+        if isinstance(config, dict):
+            configurable = config.get("configurable", {})
+            if isinstance(configurable, dict):
+                context = configurable.get("context")
+                if context:
+                    return context
+    
+    # Try runtime.config.configurable.context
+    if hasattr(runtime, "config"):
+        config = runtime.config
+        if isinstance(config, dict):
+            configurable = config.get("configurable", {})
+            if isinstance(configurable, dict):
+                context = configurable.get("context")
+                if context:
+                    return context
+    
     return None
 
 

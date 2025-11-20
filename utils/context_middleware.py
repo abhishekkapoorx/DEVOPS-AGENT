@@ -68,10 +68,18 @@ async def bind_context_for_tools(request, handler):
     """
     # Extract runtime from request
     # request might be a dict or an object with runtime attribute
+    runtime = None
     if isinstance(request, dict):
         runtime = request.get('runtime')
+        # Also check if config is in request directly
+        if runtime is None and 'config' in request:
+            # Create a mock runtime dict with config
+            runtime = {'config': request['config']}
     elif hasattr(request, 'runtime'):
         runtime = request.runtime
+    elif hasattr(request, 'config'):
+        # Create a mock runtime dict with config
+        runtime = {'config': request.config}
     else:
         # Try to get runtime from handler if it's available
         runtime = getattr(handler, 'runtime', None) if hasattr(handler, 'runtime') else None

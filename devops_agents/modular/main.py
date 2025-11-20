@@ -87,7 +87,14 @@ Available subagents:
 - thinker_expert: Strategic planning, risk assessment, decision-making
 - watcher_expert: Monitoring, observability, performance tracking
 
-For complex tasks, delegate to subagents using the task() tool. This keeps your context clean and improves results."""
+For complex tasks, delegate to subagents using the task() tool. This keeps your context clean and improves results.
+
+## Working Directory and Paths
+- Always use the current working directory for file operations and shell commands
+- Use relative paths (e.g., "." or "./file.txt") instead of absolute paths (e.g., "/" or "/home/...")
+- When using ls, read_file, write_file, or shell commands, work within the current working directory
+- The current working directory is set to the project root - use it as your base for all operations
+- For shell commands (pwd, ls, etc.), they will execute in the current working directory automatically"""
 
 
 def create_backend_factory(root_dir=None):
@@ -278,12 +285,30 @@ async def invoke_modular_agent_async(message: str, thread_id: str = "default", r
     """
     from loguru import logger
     from langchain_core.messages import AIMessage, ToolMessage, HumanMessage
+    from utils.context import create_context, push_runtime_context
+    import os
     
     agent = get_agent(root_dir=root_dir)
+    
+    # Resolve root_dir to absolute path
+    if root_dir is None:
+        root_dir = os.path.abspath(os.getcwd())
+    else:
+        root_dir = os.path.abspath(root_dir)
+    
+    # Create context with working directory
+    context = create_context(
+        working_directory=root_dir,
+        project_root=root_dir
+    )
+    
+    # Push context to ContextVar so tools can access it
+    push_runtime_context(context)
     
     config = {
         "configurable": {
             "thread_id": thread_id,
+            "context": context,  # Pass context in config for runtime access
         }
     }
     
