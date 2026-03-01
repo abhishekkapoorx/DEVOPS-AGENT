@@ -4,7 +4,7 @@ aiosignal==1.4.0
 annotated-types==0.7.0
 anyio==4.11.0
 attrs==25.3.0
-awscli==1.42.6
+awscli==1.44.38
 awslabs.aws-api-mcp-server==0.3.4
 blockbuster==1.5.25
 boto3==1.40.6
