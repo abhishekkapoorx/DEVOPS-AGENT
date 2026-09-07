@@ -1,14 +1,15 @@
-from langgraph.prebuilt import create_react_agent
+from langchain.agents import create_agent
 from langchain_community.agent_toolkits.file_management.toolkit import (
     FileManagementToolkit,
 )
 from llms import DEFAULT_MODEL
-# from codebase_indexing.tools.agent_tools import create_agent_tools
+from utils.context_middleware import (
+    bind_context_before_model,
+    bind_context_for_tools,
+)
 
-# Tools
-tools = FileManagementToolkit(
-    root_dir="D:\\Projects\\DEVOPS-AGENT\\dummy_projects"
-).get_tools()
+# Tools - respect runtime context by using relative root directory
+tools = FileManagementToolkit(root_dir=".").get_tools()
 
 
 CODER_AGENT_PROMPT = """
@@ -47,9 +48,10 @@ CODER_AGENT_PROMPT = """
         Begin by awaiting instructions from the user.
         """
 
-agent = create_react_agent(
-    name="coder_agent",
+agent = create_agent(
     model=DEFAULT_MODEL,
     tools=tools,
-    prompt=CODER_AGENT_PROMPT,
-).with_config({"recursion_limit": 150})
+    name="coder_agent",
+    system_prompt=CODER_AGENT_PROMPT,
+    middleware=[bind_context_before_model, bind_context_for_tools],
+)

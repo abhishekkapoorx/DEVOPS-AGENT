@@ -5,7 +5,7 @@ AWS MCP Client utility for async operations
 import asyncio
 from pathlib import Path
 from langchain_mcp_adapters.client import MultiServerMCPClient
-from langgraph.prebuilt import create_react_agent
+from langchain.agents import create_agent
 from llms import DEFAULT_MODEL
 from typing import Optional, List, Any
 
@@ -97,11 +97,11 @@ class AWSMCPClient:
                     self.tools.append(tool)
 
             # Create ReAct agent with the tools
-            self.agent = create_react_agent(
+            self.agent = create_agent(
                 model=DEFAULT_MODEL,
                 tools=self.tools,
                 name="aws_agent",
-                prompt=AWS_AGENT_PROMPT,
+                system_prompt=AWS_AGENT_PROMPT,
             )
 
             return True
@@ -109,7 +109,7 @@ class AWSMCPClient:
         except Exception as e:
             print(f"Warning: Failed to load AWS MCP tools: {e}")
             # Create fallback agent without MCP tools
-            self.agent = create_react_agent(
+            self.agent = create_agent(
                 model=DEFAULT_MODEL,
                 tools=[],
                 name="aws_agent",

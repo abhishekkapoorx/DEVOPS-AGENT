@@ -1,6 +1,6 @@
 # AWS Agent with MCP Tools
 
-This AWS Agent uses LangGraph's `create_react_agent` and integrates AWS tools through the Model Context Protocol (MCP).
+This AWS Agent uses LangChain's `create_agent` and integrates AWS tools through the Model Context Protocol (MCP).
 
 ## Features
 
@@ -36,7 +36,7 @@ The AWS Agent provides access to the following AWS services through MCP tools:
 
 ## Files
 
-- `AWSAgent.py`: Main agent implementation using `create_react_agent`
+- `AWSAgent.py`: Main agent implementation using `create_agent`
 - `aws_mcp_server.py`: MCP server providing AWS tools
 - `aws_mcp_client.py`: Async client wrapper for MCP operations
 - `example_aws_usage.py`: Example usage script
