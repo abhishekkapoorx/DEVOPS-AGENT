@@ -26,36 +26,72 @@ def _bind_context(runtime) -> tuple[Any, str]:
     Bind runtime context and return (token, working_directory).
 
     token should be passed to pop_runtime_context when finished.
+    
+    Args:
+        runtime: Runtime object (may be None, dict, or object with .context attribute)
     """
-    context: AgentContext | None = get_context_from_runtime(runtime)
+    # Handle None runtime
+    if runtime is None:
+        context = None
+    else:
+        context: AgentContext | None = get_context_from_runtime(runtime)
+    
     token = push_runtime_context(context)
     working_directory = get_working_directory(context)
     return token, working_directory
 
 
 @before_model
-def bind_context_before_model(request, handler):
+def bind_context_before_model(state, runtime):
     """
     Middleware that stores runtime context before model invocation.
+    
+    Args:
+        state: Agent state
+        runtime: Runtime object with context
     """
-    token, _ = _bind_context(request.runtime)
+    token, _ = _bind_context(runtime)
     try:
-        return handler(request)
+        return state
     finally:
         pop_runtime_context(token)
 
 
 @wrap_tool_call
-def bind_context_for_tools(request, handler):
+async def bind_context_for_tools(request, handler):
     """
     Middleware that ensures tools run inside the working directory context.
+    
+    Args:
+        request: Tool request object (may be dict or object)
+        handler: Handler function to call (can be sync or async)
     """
-    token, working_directory = _bind_context(request.runtime)
+    # Extract runtime from request
+    # request might be a dict or an object with runtime attribute
+    runtime = None
+    if isinstance(request, dict):
+        runtime = request.get('runtime')
+        # Also check if config is in request directly
+        if runtime is None and 'config' in request:
+            # Create a mock runtime dict with config
+            runtime = {'config': request['config']}
+    elif hasattr(request, 'runtime'):
+        runtime = request.runtime
+    elif hasattr(request, 'config'):
+        # Create a mock runtime dict with config
+        runtime = {'config': request.config}
+    else:
+        # Try to get runtime from handler if it's available
+        runtime = getattr(handler, 'runtime', None) if hasattr(handler, 'runtime') else None
+    
+    token, working_directory = _bind_context(runtime)
     previous_cwd = os.getcwd()
     try:
         if working_directory:
             os.chdir(working_directory)
-        return handler(request)
+        # The handler is provided by the framework and will be async when used with async invocation
+        # The decorator handles the async/sync distinction
+        return await handler(request)
     finally:
         os.chdir(previous_cwd)
         pop_runtime_context(token)

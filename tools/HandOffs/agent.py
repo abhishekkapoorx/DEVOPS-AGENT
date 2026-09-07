@@ -52,14 +52,63 @@ coder_agent_handoff = create_handoff_tool(
 
     Behavior:
     - Uses file management tools autonomously; no manual user steps
+    - Includes self-reflection and code quality validation
     - Verifies changes and returns with a concise summary of edits
+    """
+)
+
+# Thinker Agent handoff tool
+thinker_agent_handoff = create_handoff_tool(
+    agent_name="thinker_agent",
+    name="thinker_agent",
+    description="""
+    Handoff to ThinkerAgent for strategic planning and high-level analysis.
+
+    Scope:
+    - Strategic analysis and planning for complex problems
+    - Risk assessment and mitigation strategy development
+    - Evaluation of multiple solution approaches
+    - Decision rationale and architectural guidance
+    - Complex problem decomposition
+    - Success criteria definition
+
+    Behavior:
+    - Provides deep strategic thinking and reasoning
+    - Evaluates alternatives and recommends optimal approaches
+    - Includes self-reflection on analysis quality
+    - Returns with clear recommendations and rationale
+    """
+)
+
+# Watcher Agent handoff tool
+watcher_agent_handoff = create_handoff_tool(
+    agent_name="watcher_agent",
+    name="watcher_agent",
+    description="""
+    Handoff to WatcherAgent for monitoring and observability.
+
+    Scope:
+    - System health monitoring and status checks
+    - Performance metrics collection and analysis
+    - Anomaly detection across agent operations
+    - Alert generation for issues
+    - Observability recommendations
+    - Agent coordination monitoring
+
+    Behavior:
+    - Monitors agent and system performance
+    - Detects anomalies and generates alerts
+    - Provides insights on system health
+    - Returns with health status, metrics, and recommendations
     """
 )
 
 
 # List of all agent handoff tools
 all_agent_handoffs = [
-    cloud_agent_handoff,
-    docker_k8s_handoff,
+    thinker_agent_handoff,
     coder_agent_handoff,
+    docker_k8s_handoff,
+    cloud_agent_handoff,
+    watcher_agent_handoff,
 ]

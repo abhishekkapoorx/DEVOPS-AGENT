@@ -42,6 +42,8 @@ def _is_recursive_ls(command: str) -> bool:
 
 def _subprocess_run(command: str, *, cwd: Optional[str] = None) -> subprocess.CompletedProcess[str]:
     """Helper to execute subprocess with context-aware working directory."""
+    logger.debug(f"Executing subprocess command: {command} in working directory: {cwd}")
+    print(f"Executing subprocess command: {command} in working directory: {cwd}")
     return subprocess.run(
         command,
         shell=True,
