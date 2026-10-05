@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import shlex
+import sys
 from typing import Sequence
 
 from .executor import CommandExecutor, ExecutionRequest, SUPPORTED_TOOLS
@@ -13,6 +15,9 @@ from .executor import CommandExecutor, ExecutionRequest, SUPPORTED_TOOLS
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Execute approved local DevOps tool requests")
     parser.add_argument("--interactive", action="store_true", help="Read requests interactively")
+    parser.add_argument("--ask", help="Ask the server agent an infrastructure question")
+    parser.add_argument("--user-id", default="cli-user")
+    parser.add_argument("--session-id", default="cli-session")
     parser.add_argument("--tool", choices=sorted(SUPPORTED_TOOLS))
     parser.add_argument("args", nargs="*", help="Arguments passed to the selected tool")
     return parser
@@ -42,6 +47,26 @@ def interactive(executor: CommandExecutor | None = None) -> None:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    if args.ask:
+        from agent_loop import ExecutionLoop, ToolExecution
+        from server_agent import ServerAgent
+
+        def progress(execution: ToolExecution) -> None:
+            print(
+                f"[{execution.request.tool}:{execution.request.action}] "
+                f"exit={execution.result.exit_code}",
+                file=sys.stderr,
+            )
+
+        response = asyncio.run(
+            ExecutionLoop(agent=ServerAgent(), progress=progress).run(
+                user_id=args.user_id,
+                session_id=args.session_id,
+                message=args.ask,
+            )
+        )
+        print(json.dumps({"message": response.message, "rounds": response.rounds}))
+        return 0
     if args.interactive:
         interactive()
         return 0
