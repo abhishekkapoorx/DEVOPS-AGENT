@@ -78,7 +78,7 @@ request and session context as the source of truth.
 def _default_model() -> Any:
     """Load the configured model lazily so importing this module is testable."""
 
-    from llms import DEFAULT_MODEL
+    from agent_server.llms import DEFAULT_MODEL
     return DEFAULT_MODEL
 
 
