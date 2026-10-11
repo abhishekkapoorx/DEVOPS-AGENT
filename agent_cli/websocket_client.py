@@ -11,7 +11,7 @@ from websockets.asyncio.client import ClientConnection, connect
 from websockets.exceptions import ConnectionClosed
 
 from .executor import CommandExecutor, ExecutionRequest
-from agent_protocol import AgentMessage, ErrorMessage, ToolRequestMessage
+from agent_protocol import AgentMessage, ErrorMessage, ToolRequestMessage, redact_secrets
 
 
 class AgentWebSocketClient:
@@ -28,6 +28,7 @@ class AgentWebSocketClient:
         max_retries: int = 2,
         retry_delay: float = 0.25,
         receive_timeout: float = 60.0,
+        approval_callback=None,
     ):
         if not url.startswith("wss://"):
             raise ValueError("Agent transport requires a wss:// URL")
@@ -37,7 +38,7 @@ class AgentWebSocketClient:
         self.token = token
         self.user_id = user_id
         self.session_id = session_id
-        self.executor = executor or CommandExecutor()
+        self.executor = executor or CommandExecutor(approval_callback=approval_callback, user_id=user_id, session_id=session_id or "remote")
         self.max_retries = max_retries
         self.retry_delay = retry_delay
         self.receive_timeout = receive_timeout
@@ -146,7 +147,7 @@ class AgentWebSocketClient:
                     json.dumps({
                         "type": "tool_result",
                         "request_id": wire_message.request_id,
-                        "result": result,
+                        "result": redact_secrets(result),
                     })
                 )
             elif isinstance(wire_message, AgentMessage) and wire_message.final:

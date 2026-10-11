@@ -39,7 +39,7 @@ def interactive(executor: CommandExecutor | None = None) -> None:
             print(f"Unsupported tool: {tool}")
             continue
         raw_args = input("args> ")
-        args = (raw_args,) if tool == "shell" else tuple(shlex.split(raw_args))
+        args = tuple(shlex.split(raw_args))
         try:
             _print_result(executor, ExecutionRequest(tool=tool, args=args))
         except (ValueError, OSError) as exc:

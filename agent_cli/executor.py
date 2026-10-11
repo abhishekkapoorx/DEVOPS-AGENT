@@ -8,14 +8,21 @@ AWS, gcloud, and Kubernetes CLIs resolve local authentication normally.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
+from agent_protocol import OperationClass, policy_for, redact_secrets
 
-SUPPORTED_TOOLS = frozenset({"aws", "gcloud", "kubectl", "docker", "git", "shell"})
+from .audit import AuditSink, new_record
+
+
+SUPPORTED_TOOLS = frozenset({"aws", "gcloud", "kubectl", "docker", "git", "files"})
 Runner = Callable[..., tuple[int, str, str]]
+ApprovalCallback = Callable[["ExecutionRequest", OperationClass], bool]
 
 
 class UnsupportedToolError(ValueError):
@@ -36,8 +43,8 @@ class ExecutionRequest:
                 f"Unsupported tool {self.tool!r}; choose one of {sorted(SUPPORTED_TOOLS)}"
             )
         normalized_args = tuple(str(arg) for arg in self.args)
-        if self.tool == "shell" and len(normalized_args) != 1:
-            raise ValueError("shell requests must contain exactly one command string")
+        if not normalized_args:
+            raise ValueError("requests must contain an action")
         object.__setattr__(self, "args", normalized_args)
 
     @classmethod
@@ -58,6 +65,7 @@ class ExecutionResult:
     stdout: str
     stderr: str
     duration_ms: float
+    approved: bool = True
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -73,7 +81,7 @@ class ExecutionResult:
         return json.dumps(self.to_dict(), sort_keys=True)
 
 
-def _run_subprocess(command: Sequence[str] | str, *, cwd: str | None, env: Mapping[str, str] | None, shell: bool) -> tuple[int, str, str]:
+def _run_subprocess(command: Sequence[str], *, cwd: str | None, env: Mapping[str, str] | None, shell: bool = False) -> tuple[int, str, str]:
     completed = subprocess.run(
         command,
         cwd=cwd,
@@ -89,34 +97,71 @@ def _run_subprocess(command: Sequence[str] | str, *, cwd: str | None, env: Mappi
 class CommandExecutor:
     """Execute supported local tools through one common contract."""
 
-    def __init__(self, runner: Runner | None = None) -> None:
+    def __init__(self, runner: Runner | None = None, *, approval_callback: ApprovalCallback | None = None, audit_sink: AuditSink | None = None, user_id: str = "cli-user", session_id: str = "local") -> None:
         self._runner = runner or _run_subprocess
+        self._approval_callback = approval_callback
+        self._audit_sink = audit_sink
+        self._user_id = user_id
+        self._session_id = session_id
+        self.audit_records = []
+
+    @staticmethod
+    def _validate_cwd(cwd: str | None) -> str | None:
+        if cwd is None:
+            return None
+        requested = Path(cwd).resolve(strict=False)
+        allowed = Path.cwd().resolve(strict=False)
+        try:
+            requested.relative_to(allowed)
+        except ValueError as exc:
+            raise ValueError("working directory is outside the local client workspace") from exc
+        if not requested.is_dir():
+            raise ValueError("working directory does not exist")
+        return os.fspath(requested)
 
     def execute(self, request: ExecutionRequest | Mapping[str, Any]) -> ExecutionResult:
         if not isinstance(request, ExecutionRequest):
             request = ExecutionRequest.from_mapping(request)
 
-        shell = request.tool == "shell"
-        command: Sequence[str] | str = request.args[0] if shell else (request.tool, *request.args)
+        action = request.args[0]
+        operation = policy_for(request.tool, action)
+        cwd = self._validate_cwd(request.cwd)
+        approved = operation.classification != OperationClass.DESTRUCTIVE
+        if not approved and self._approval_callback is not None:
+            approved = bool(self._approval_callback(request, operation.classification))
         started = time.perf_counter()
+        if not approved:
+            duration_ms = round((time.perf_counter() - started) * 1000, 3)
+            result = ExecutionResult(request.tool, request.args, 403, "", "Explicit approval required", duration_ms, False)
+            self._audit(result, operation.classification, action, started, "denied")
+            return result
+        command: Sequence[str] = (request.tool, *request.args)
         try:
             exit_code, stdout, stderr = self._runner(
                 command,
-                cwd=request.cwd,
-                env=None,  # Preserve local authentication and environment variables.
-                shell=shell,
+                cwd=cwd,
+                env=None,
+                shell=False,
             )
         except OSError as exc:
             exit_code, stdout, stderr = 127, "", str(exc)
         duration_ms = round((time.perf_counter() - started) * 1000, 3)
-        return ExecutionResult(
+        result = ExecutionResult(
             tool=request.tool,
             args=request.args,
             exit_code=exit_code,
-            stdout=stdout,
-            stderr=stderr,
+            stdout=redact_secrets(stdout),
+            stderr=redact_secrets(stderr),
             duration_ms=duration_ms,
         )
+        self._audit(result, operation.classification, action, started, "succeeded" if exit_code == 0 else "failed")
+        return result
+
+    def _audit(self, result: ExecutionResult, operation: OperationClass, action: str, started: float, outcome: str) -> None:
+        record = new_record(user_id=self._user_id, session_id=self._session_id, request_id="local", tool=result.tool, action=action, operation=operation, outcome=outcome, started_at=started, duration_ms=result.duration_ms, details=result.to_dict())
+        self.audit_records.append(record)
+        if self._audit_sink is not None:
+            self._audit_sink(record)
 
 
 class LocalExecutionClient:

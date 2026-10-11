@@ -14,6 +14,7 @@ from langchain.agents import create_agent
 from langchain_core.messages import BaseMessage, HumanMessage, ToolMessage
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from agent_protocol import policy_for
 
 
 class SessionContext(BaseModel):
@@ -31,6 +32,9 @@ class ToolRequest(BaseModel):
     tool: str = Field(min_length=1, pattern=r"^[a-z][a-z0-9_]*$")
     action: str = Field(min_length=1, pattern=r"^[a-z][a-z0-9_]*$")
     arguments: dict[str, Any] = Field(default_factory=dict)
+
+    def model_post_init(self, __context: Any) -> None:
+        policy_for(self.tool, self.action)
 
 
 class _ToolRequestInput(BaseModel):

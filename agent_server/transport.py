@@ -18,6 +18,8 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
+from agent_protocol import redact_secrets
+from .auth import AccessClaims, issue_access_token, verify_access_token
 from .server_agent import AgentResponse, ServerAgent
 from agent_protocol import (
     AgentMessage,
@@ -43,7 +45,7 @@ def _authorization_token(websocket: WebSocket) -> str | None:
 def _results_message(results: list[ToolResultMessage]) -> str:
     return "Tool results:\n" + json.dumps(
         [
-            {"request_id": result.request_id, "result": result.result}
+            {"request_id": result.request_id, "result": redact_secrets(result.result)}
             for result in results
         ],
         sort_keys=True,
@@ -143,7 +145,9 @@ def create_app(
         raise ValueError("max_rounds must be positive")
     expected_token = auth_token or os.getenv("DEVOPS_AGENT_AUTH_TOKEN")
     app = FastAPI(title="DevOps Agent Transport")
-    sessions: dict[tuple[str, str], TransportSession] = {}
+    # Sessions are scoped to one authenticated socket, never to a client-controlled
+    # global key, preventing cross-connection history leaks.
+    sessions: dict[str, TransportSession] = {}
 
     @app.get("/health")
     async def health() -> dict[str, str]:
@@ -153,12 +157,13 @@ def create_app(
     async def authenticate(request: TokenRequest) -> JSONResponse:
         if not _token_is_valid(request.token, expected_token):
             return JSONResponse({"detail": "Unauthorized"}, status_code=401)
-        return JSONResponse({"authenticated": True, "token_type": "bearer"})
+        return JSONResponse({"authenticated": True, "token_type": "bearer", "access_token": issue_access_token(expected_token or "", request.user_id)})
 
     @app.websocket("/ws")
     async def websocket_endpoint(websocket: WebSocket) -> None:
         token = _authorization_token(websocket)
-        if not _token_is_valid(token or "", expected_token):
+        claims: AccessClaims | None = verify_access_token(token or "", expected_token or "")
+        if claims is None:
             await websocket.close(code=1008, reason="Unauthorized")
             return
         await websocket.accept()
@@ -173,12 +178,13 @@ def create_app(
                         ErrorMessage(type="error", message="Malformed message").model_dump()
                     )
                     continue
+                authenticated_user = claims.user_id if claims else incoming.user_id
                 if session is None:
+                    if claims and incoming.user_id != authenticated_user:
+                        await websocket.send_json(ErrorMessage(type="error", message="User identity mismatch").model_dump())
+                        continue
                     session_id = incoming.session_id or str(uuid4())
-                    session = sessions.setdefault(
-                        (incoming.user_id, session_id),
-                        TransportSession(user_id=incoming.user_id, session_id=session_id),
-                    )
+                    session = TransportSession(user_id=authenticated_user, session_id=session_id)
                 elif (incoming.user_id, incoming.session_id or session.session_id) != (
                     session.user_id,
                     session.session_id,
