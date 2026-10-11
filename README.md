@@ -40,6 +40,7 @@ python -m pip install ".[server]"
 uvicorn agent_server.transport:app
 ```
 
-The old `cli`, `server_agent`, and `transport` import paths remain thin
-compatibility wrappers. New code should import from the package that owns the
-module. The compatibility paths can be removed in a future breaking release.
+The old `server_agent` and `transport` import paths remain thin compatibility
+wrappers. New code should import from the package that owns the module. The
+CLI has no root-level compatibility package; use `devops-agent` or
+`python -m agent_cli`.
