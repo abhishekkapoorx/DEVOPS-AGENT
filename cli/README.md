@@ -4,6 +4,14 @@ The local client executes approved requests without importing LangGraph or the
 server-side agent. It preserves the user's environment so AWS, gcloud, and
 Kubernetes CLIs use local authentication.
 
+For an authenticated remote agent, use the WebSocket transport (use `wss://`
+in production):
+
+```bash
+python -m cli --remote-url wss://agent.example.com/ws \
+  --token "$DEVOPS_AGENT_AUTH_TOKEN" --ask "Check git status"
+```
+
 One-shot execution:
 
 ```bash
