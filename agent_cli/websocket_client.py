@@ -112,7 +112,7 @@ class AgentWebSocketClient:
                     raise ValueError("Unknown agent transport message type")
             except (json.JSONDecodeError, TypeError, ValueError, ValidationError) as exc:
                 raise ValueError("Malformed agent transport message") from exc
-            messages.append(payload)
+            messages.append(redact_secrets(payload))
             if isinstance(wire_message, ToolRequestMessage):
                 arguments = wire_message.arguments
                 args = arguments.get("args", ())
@@ -133,7 +133,7 @@ class AgentWebSocketClient:
                         args=(wire_message.action, *args),
                         cwd=arguments.get("cwd"),
                     )
-                    result = self.executor.execute(request).to_dict()
+                    result = self.executor.execute(request, request_id=wire_message.request_id).to_dict()
                 except (TypeError, ValueError, KeyError) as exc:
                     result = {
                         "tool": wire_message.tool,

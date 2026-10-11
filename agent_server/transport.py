@@ -11,14 +11,14 @@ import hmac
 import json
 import os
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 from uuid import uuid4
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
-from agent_protocol import redact_secrets
+from agent_protocol import OperationClass, policy_for, redact_secrets
 from .auth import AccessClaims, issue_access_token, verify_access_token
 from .server_agent import AgentResponse, ServerAgent
 from agent_protocol import (
@@ -67,6 +67,7 @@ async def _run_turn(
     session: TransportSession,
     message: str,
     max_rounds: int,
+    scopes: frozenset[str],
 ) -> None:
     current = message
     for _ in range(max_rounds):
@@ -94,6 +95,10 @@ async def _run_turn(
 
         request_ids: set[str] = set()
         for request in response.requests:
+            operation = policy_for(request.tool, request.action)
+            if operation.classification.value not in scopes:
+                await websocket.send_json(ErrorMessage(type="error", message="Operation is not authorized for this session").model_dump())
+                continue
             request_id = str(uuid4())
             request_ids.add(request_id)
             await websocket.send_json(
@@ -102,7 +107,7 @@ async def _run_turn(
                     request_id=request_id,
                     tool=request.tool,
                     action=request.action,
-                    arguments=request.arguments,
+                    arguments=redact_secrets(request.arguments),
                 ).model_dump()
             )
 
@@ -134,6 +139,8 @@ def create_app(
     agent_factory: Callable[[], Any] | None = None,
     auth_token: str | None = None,
     max_rounds: int = 8,
+    token_ttl_seconds: int = 900,
+    authorized_scopes: Mapping[str, set[str]] | None = None,
 ) -> FastAPI:
     """Create the authenticated API application.
 
@@ -141,9 +148,10 @@ def create_app(
     ``DEVOPS_AGENT_AUTH_TOKEN``. There is deliberately no permissive default.
     """
 
-    if max_rounds < 1:
-        raise ValueError("max_rounds must be positive")
+    if max_rounds < 1 or token_ttl_seconds < 1:
+        raise ValueError("max_rounds and token_ttl_seconds must be positive")
     expected_token = auth_token or os.getenv("DEVOPS_AGENT_AUTH_TOKEN")
+    default_scopes = frozenset({OperationClass.READ.value, OperationClass.WRITE.value, OperationClass.DESTRUCTIVE.value})
     app = FastAPI(title="DevOps Agent Transport")
     # Sessions are scoped to one authenticated socket, never to a client-controlled
     # global key, preventing cross-connection history leaks.
@@ -157,7 +165,10 @@ def create_app(
     async def authenticate(request: TokenRequest) -> JSONResponse:
         if not _token_is_valid(request.token, expected_token):
             return JSONResponse({"detail": "Unauthorized"}, status_code=401)
-        return JSONResponse({"authenticated": True, "token_type": "bearer", "access_token": issue_access_token(expected_token or "", request.user_id)})
+        scopes = frozenset(authorized_scopes.get(request.user_id, set()) if authorized_scopes is not None else default_scopes)
+        if authorized_scopes is not None and request.user_id not in authorized_scopes:
+            return JSONResponse({"detail": "Forbidden"}, status_code=403)
+        return JSONResponse({"authenticated": True, "token_type": "bearer", "access_token": issue_access_token(expected_token or "", request.user_id, token_ttl_seconds, scopes)})
 
     @app.websocket("/ws")
     async def websocket_endpoint(websocket: WebSocket) -> None:
@@ -193,7 +204,7 @@ def create_app(
                         ErrorMessage(type="error", message="Session identity mismatch").model_dump()
                     )
                     continue
-                await _run_turn(websocket, agent, session, incoming.message, max_rounds)
+                await _run_turn(websocket, agent, session, incoming.message, max_rounds, claims.scopes)
         except WebSocketDisconnect:
             return
 

@@ -70,7 +70,7 @@ class ExecutionResult:
     def to_dict(self) -> dict[str, Any]:
         return {
             "tool": self.tool,
-            "args": list(self.args),
+            "args": redact_secrets(list(self.args)),
             "exit_code": self.exit_code,
             "stdout": self.stdout,
             "stderr": self.stderr,
@@ -119,7 +119,7 @@ class CommandExecutor:
             raise ValueError("working directory does not exist")
         return os.fspath(requested)
 
-    def execute(self, request: ExecutionRequest | Mapping[str, Any]) -> ExecutionResult:
+    def execute(self, request: ExecutionRequest | Mapping[str, Any], *, request_id: str = "local") -> ExecutionResult:
         if not isinstance(request, ExecutionRequest):
             request = ExecutionRequest.from_mapping(request)
 
@@ -133,7 +133,7 @@ class CommandExecutor:
         if not approved:
             duration_ms = round((time.perf_counter() - started) * 1000, 3)
             result = ExecutionResult(request.tool, request.args, 403, "", "Explicit approval required", duration_ms, False)
-            self._audit(result, operation.classification, action, started, "denied")
+            self._audit(result, operation.classification, action, started, "denied", request_id)
             return result
         command: Sequence[str] = (request.tool, *request.args)
         try:
@@ -154,11 +154,11 @@ class CommandExecutor:
             stderr=redact_secrets(stderr),
             duration_ms=duration_ms,
         )
-        self._audit(result, operation.classification, action, started, "succeeded" if exit_code == 0 else "failed")
+        self._audit(result, operation.classification, action, started, "succeeded" if exit_code == 0 else "failed", request_id)
         return result
 
-    def _audit(self, result: ExecutionResult, operation: OperationClass, action: str, started: float, outcome: str) -> None:
-        record = new_record(user_id=self._user_id, session_id=self._session_id, request_id="local", tool=result.tool, action=action, operation=operation, outcome=outcome, started_at=started, duration_ms=result.duration_ms, details=result.to_dict())
+    def _audit(self, result: ExecutionResult, operation: OperationClass, action: str, started: float, outcome: str, request_id: str) -> None:
+        record = new_record(user_id=self._user_id, session_id=self._session_id, request_id=request_id, tool=result.tool, action=action, operation=operation, outcome=outcome, started_at=started, duration_ms=result.duration_ms, details=result.to_dict())
         self.audit_records.append(record)
         if self._audit_sink is not None:
             self._audit_sink(record)
