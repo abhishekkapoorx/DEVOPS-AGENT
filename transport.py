@@ -11,54 +11,22 @@ import hmac
 import json
 import os
 from dataclasses import dataclass, field
-from typing import Any, Callable, Literal
+from typing import Any, Callable
 from uuid import uuid4
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import ValidationError
 
 from server_agent import AgentResponse, ServerAgent
-
-
-class _Message(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-
-class TokenRequest(_Message):
-    token: str = Field(min_length=1)
-
-
-class UserMessage(_Message):
-    type: Literal["user_message"]
-    message: str = Field(min_length=1)
-    user_id: str = Field(default="cli-user", min_length=1)
-    session_id: str | None = Field(default=None, min_length=1)
-
-
-class AgentMessage(_Message):
-    type: Literal["agent_message"]
-    message: str
-    final: bool = True
-
-
-class ToolRequestMessage(_Message):
-    type: Literal["tool_request"]
-    request_id: str = Field(min_length=1)
-    tool: str = Field(min_length=1)
-    action: str = Field(min_length=1)
-    arguments: dict[str, Any] = Field(default_factory=dict)
-
-
-class ToolResultMessage(_Message):
-    type: Literal["tool_result"]
-    request_id: str = Field(min_length=1)
-    result: dict[str, Any]
-
-
-class ErrorMessage(_Message):
-    type: Literal["error"]
-    message: str
+from transport_protocol import (
+    AgentMessage,
+    ErrorMessage,
+    TokenRequest,
+    ToolRequestMessage,
+    ToolResultMessage,
+    UserMessage,
+)
 
 
 def _token_is_valid(candidate: str, expected: str | None) -> bool:
@@ -175,6 +143,7 @@ def create_app(
         raise ValueError("max_rounds must be positive")
     expected_token = auth_token or os.getenv("DEVOPS_AGENT_AUTH_TOKEN")
     app = FastAPI(title="DevOps Agent Transport")
+    sessions: dict[tuple[str, str], TransportSession] = {}
 
     @app.get("/health")
     async def health() -> dict[str, str]:
@@ -184,7 +153,7 @@ def create_app(
     async def authenticate(request: TokenRequest) -> JSONResponse:
         if not _token_is_valid(request.token, expected_token):
             return JSONResponse({"detail": "Unauthorized"}, status_code=401)
-        return JSONResponse({"access_token": request.token, "token_type": "bearer"})
+        return JSONResponse({"authenticated": True, "token_type": "bearer"})
 
     @app.websocket("/ws")
     async def websocket_endpoint(websocket: WebSocket) -> None:
@@ -205,10 +174,19 @@ def create_app(
                     )
                     continue
                 if session is None:
-                    session = TransportSession(
-                        user_id=incoming.user_id,
-                        session_id=incoming.session_id or str(uuid4()),
+                    session_id = incoming.session_id or str(uuid4())
+                    session = sessions.setdefault(
+                        (incoming.user_id, session_id),
+                        TransportSession(user_id=incoming.user_id, session_id=session_id),
                     )
+                elif (incoming.user_id, incoming.session_id or session.session_id) != (
+                    session.user_id,
+                    session.session_id,
+                ):
+                    await websocket.send_json(
+                        ErrorMessage(type="error", message="Session identity mismatch").model_dump()
+                    )
+                    continue
                 await _run_turn(websocket, agent, session, incoming.message, max_rounds)
         except WebSocketDisconnect:
             return

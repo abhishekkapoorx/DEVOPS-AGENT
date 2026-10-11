@@ -1,6 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
+from cli.websocket_client import AgentWebSocketClient
 from server_agent import AgentResponse, SessionContext, ToolRequest
 from transport import create_app
 
@@ -29,7 +30,7 @@ def test_health_and_authentication_endpoints():
     assert client.get("/health").json() == {"status": "ok"}
     assert client.post("/auth/token", json={"token": "wrong"}).status_code == 401
     response = client.post("/auth/token", json={"token": "secret"})
-    assert response.json()["token_type"] == "bearer"
+    assert response.json() == {"authenticated": True, "token_type": "bearer"}
 
 
 def test_websocket_rejects_unauthorized_client():
@@ -55,3 +56,18 @@ def test_websocket_correlates_tool_result_and_streams_final_message():
         assert socket.receive_json() == {
             "type": "agent_message", "message": "The check completed.", "final": True
         }
+
+
+def test_websocket_rejects_malformed_tool_result_without_closing_session():
+    client = TestClient(create_app(auth_token="secret", agent_factory=FakeAgent))
+    with client.websocket_connect("/ws", headers={"Authorization": "Bearer secret"}) as socket:
+        socket.send_json({"type": "user_message", "message": "Check git"})
+        socket.receive_json()
+        request = socket.receive_json()
+        socket.send_json({"type": "tool_result", "request_id": request["request_id"]})
+        assert socket.receive_json() == {"type": "error", "message": "Malformed tool result"}
+
+
+def test_client_requires_tls():
+    with pytest.raises(ValueError, match="wss://"):
+        AgentWebSocketClient("ws://localhost/ws", "secret")
