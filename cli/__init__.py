@@ -7,6 +7,7 @@ from .executor import (
     LocalExecutionClient,
     UnsupportedToolError,
 )
+from .websocket_client import AgentWebSocketClient
 
 __all__ = [
     "CommandExecutor",
@@ -14,4 +15,5 @@ __all__ = [
     "ExecutionResult",
     "LocalExecutionClient",
     "UnsupportedToolError",
+    "AgentWebSocketClient",
 ]
