@@ -2,8 +2,8 @@ import json
 
 import pytest
 
-from cli.executor import CommandExecutor, ExecutionRequest, ExecutionResult, UnsupportedToolError
-from cli.__main__ import main
+from agent_cli.executor import CommandExecutor, ExecutionRequest, ExecutionResult, UnsupportedToolError
+from agent_cli.__main__ import main
 
 
 def test_execution_request_accepts_supported_cli_and_serializes_result():
@@ -74,7 +74,7 @@ def test_cli_one_shot_mode_returns_zero(monkeypatch, capsys):
         def execute(self, request):
             return ExecutionResult(request.tool, request.args, 0, "ok", "", 1.0)
 
-    monkeypatch.setattr("cli.__main__.CommandExecutor", FakeExecutor)
+    monkeypatch.setattr("agent_cli.__main__.CommandExecutor", FakeExecutor)
 
     assert main(["--tool", "git", "status"]) == 0
     assert '"exit_code": 0' in capsys.readouterr().out

@@ -1,9 +1,9 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from cli.websocket_client import AgentWebSocketClient
-from server_agent import AgentResponse, SessionContext, ToolRequest
-from transport import create_app
+from agent_cli.websocket_client import AgentWebSocketClient
+from agent_server.server_agent import AgentResponse, SessionContext, ToolRequest
+from agent_server.transport import create_app
 
 
 class FakeAgent:
