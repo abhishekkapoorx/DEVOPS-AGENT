@@ -1,0 +1,4 @@
+# Dependencies for the independently shipped local CLI.
+pydantic>=2.11,<3
+websockets>=15,<16
+

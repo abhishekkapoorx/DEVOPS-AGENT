@@ -1,0 +1,13 @@
+# Core dependencies for the cloud-side agent and authenticated transport.
+fastapi>=0.119,<1
+langchain>=1,<2
+langchain-core>=1,<2
+langchain-google-genai>=3,<4
+langchain-groq>=1,<2
+langchain-ollama>=1,<2
+langchain-openai>=1,<2
+pydantic>=2.11,<3
+uvicorn>=0.35,<1
+
+# The existing requirements.txt remains the full legacy development/runtime
+# environment. Install this file for the minimal server package instead.

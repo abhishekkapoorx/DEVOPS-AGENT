@@ -1,7 +1,7 @@
 {
     "dockerfile_lines": [],
     "graphs": {
-      "agent": "./agent.py:supervisor"
+      "agent": "./agent_server/app.py:supervisor"
     },
     "env": "./.env",
     "python_version": "3.12",

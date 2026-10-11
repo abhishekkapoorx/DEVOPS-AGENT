@@ -1,5 +1,8 @@
 # Local execution client
 
+The distributable package is `agent_cli`; install it with
+`python -m pip install ".[cli]"` and invoke it as `devops-agent`.
+
 The local client executes approved requests without importing LangGraph or the
 server-side agent. It preserves the user's environment so AWS, gcloud, and
 Kubernetes CLIs use local authentication.
@@ -8,22 +11,22 @@ For an authenticated remote agent, use the WebSocket transport (use `wss://`
 in production):
 
 ```bash
-python -m cli --remote-url wss://agent.example.com/ws \
+devops-agent --remote-url wss://agent.example.com/ws \
   --token "$DEVOPS_AGENT_AUTH_TOKEN" --ask "Check git status"
 ```
 
 One-shot execution:
 
 ```bash
-python -m cli --tool aws sts get-caller-identity
-python -m cli --tool kubectl get pods
-python -m cli --tool shell "git status --short"
+devops-agent --tool aws sts get-caller-identity
+devops-agent --tool kubectl get pods
+devops-agent --tool shell "git status --short"
 ```
 
 Interactive execution:
 
 ```bash
-python -m cli --interactive
+devops-agent --interactive
 ```
 
 Programmatic callers use `LocalExecutionClient.execute()` with an

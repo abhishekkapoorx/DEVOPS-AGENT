@@ -4,7 +4,7 @@ import pytest
 from langchain_core.messages import AIMessage, ToolMessage
 from pydantic import ValidationError
 
-from server_agent import AgentResponse, REQUEST_TOOLS, SessionContext, ToolRequest
+from agent_server.server_agent import AgentResponse, REQUEST_TOOLS, SessionContext, ToolRequest
 
 
 def test_tool_request_is_strictly_validated():

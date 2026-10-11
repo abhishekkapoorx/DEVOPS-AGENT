@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "devops-agent"
+version = "0.1.0"
+description = "A packaged local CLI and cloud-side DevOps agent"
+requires-python = ">=3.12"
+dependencies = []
+
+[project.optional-dependencies]
+cli = [
+    "pydantic>=2.11,<3",
+    "websockets>=15,<16",
+]
+server = [
+    "fastapi>=0.119,<1",
+    "langchain>=1,<2",
+    "langchain-core>=1,<2",
+    "pydantic>=2.11,<3",
+    "uvicorn>=0.35,<1",
+]
+
+[project.scripts]
+devops-agent = "agent_cli.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["agent_protocol*", "agent_cli*", "agent_server*"]
+
