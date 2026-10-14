@@ -6,7 +6,8 @@ import argparse
 import asyncio
 import json
 import shlex
-from typing import Sequence
+import sys
+from typing import Any, Sequence
 
 from .executor import CommandExecutor, ExecutionRequest, SUPPORTED_TOOLS
 
@@ -26,6 +27,29 @@ def _parser() -> argparse.ArgumentParser:
 
 def _print_result(executor: CommandExecutor, request: ExecutionRequest) -> None:
     print(executor.execute(request).to_json())
+
+
+def _print_progress(message: dict[str, Any]) -> None:
+    """Show redacted transport progress without corrupting the final JSON output."""
+
+    message_type = message.get("type")
+    if message_type == "agent_message":
+        print(message.get("message", ""), file=sys.stderr, flush=True)
+    elif message_type == "tool_request":
+        print(
+            f"Executing {message.get('tool', 'tool')}.{message.get('action', 'operation')}...",
+            file=sys.stderr,
+            flush=True,
+        )
+    elif message_type == "error":
+        print(f"Agent error: {message.get('message', 'unknown error')}", file=sys.stderr, flush=True)
+
+
+def _final_answer(messages: list[dict[str, Any]]) -> str | None:
+    for message in reversed(messages):
+        if message.get("type") == "agent_message" and message.get("final"):
+            return str(message.get("message", ""))
+    return None
 
 
 def interactive(executor: CommandExecutor | None = None) -> None:
@@ -60,9 +84,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                 user_id=args.user_id,
                 session_id=args.session_id,
             ) as client:
-                return await client.ask(args.ask)
+                return await client.ask(args.ask, on_message=_print_progress)
 
-        print(json.dumps(asyncio.run(ask_remote())))
+        messages = asyncio.run(ask_remote())
+        final_answer = _final_answer(messages)
+        print(final_answer if final_answer is not None else json.dumps(messages))
         return 0
     if args.interactive:
         interactive()

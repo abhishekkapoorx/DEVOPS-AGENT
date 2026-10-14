@@ -20,7 +20,7 @@ from agent_protocol import OperationClass, policy_for, redact_secrets
 from .audit import AuditSink, new_record
 
 
-SUPPORTED_TOOLS = frozenset({"aws", "gcloud", "kubectl", "docker", "git", "files"})
+SUPPORTED_TOOLS = frozenset({"aws", "az", "gcloud", "kubectl", "docker", "git", "files"})
 Runner = Callable[..., tuple[int, str, str]]
 ApprovalCallback = Callable[["ExecutionRequest", OperationClass], bool]
 

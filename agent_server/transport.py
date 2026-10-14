@@ -153,9 +153,9 @@ def create_app(
     expected_token = auth_token or os.getenv("DEVOPS_AGENT_AUTH_TOKEN")
     default_scopes = frozenset({OperationClass.READ.value, OperationClass.WRITE.value, OperationClass.DESTRUCTIVE.value})
     app = FastAPI(title="DevOps Agent Transport")
-    # Sessions are scoped to one authenticated socket, never to a client-controlled
-    # global key, preventing cross-connection history leaks.
-    sessions: dict[str, TransportSession] = {}
+    # Sessions are keyed by authenticated user and session ID, so reconnects can
+    # resume context without allowing one user's session to be read by another.
+    sessions: dict[tuple[str, str], TransportSession] = {}
 
     @app.get("/health")
     async def health() -> dict[str, str]:
@@ -195,7 +195,10 @@ def create_app(
                         await websocket.send_json(ErrorMessage(type="error", message="User identity mismatch").model_dump())
                         continue
                     session_id = incoming.session_id or str(uuid4())
-                    session = TransportSession(user_id=authenticated_user, session_id=session_id)
+                    session = sessions.setdefault(
+                        (authenticated_user, session_id),
+                        TransportSession(user_id=authenticated_user, session_id=session_id),
+                    )
                 elif (incoming.user_id, incoming.session_id or session.session_id) != (
                     session.user_id,
                     session.session_id,
