@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import asyncio
-from typing import Any
+from typing import Any, Callable
 
 from pydantic import ValidationError
 from websockets.asyncio.client import ClientConnection, connect
@@ -69,12 +69,17 @@ class AgentWebSocketClient:
             await self._connection.close()
             self._connection = None
 
-    async def ask(self, message: str) -> list[dict[str, Any]]:
+    async def ask(
+        self,
+        message: str,
+        *,
+        on_message: Callable[[dict[str, Any]], None] | None = None,
+    ) -> list[dict[str, Any]]:
         if not self._connection:
             raise RuntimeError("AgentWebSocketClient must be used as an async context manager")
         for attempt in range(self.max_retries + 1):
             try:
-                return await self._ask_once(message)
+                return await self._ask_once(message, on_message=on_message)
             except (ConnectionClosed, OSError, TimeoutError) as exc:
                 if attempt >= self.max_retries:
                     raise ConnectionError("Agent transport connection failed") from exc
@@ -82,7 +87,12 @@ class AgentWebSocketClient:
                 await self._connect_with_retry()
         raise AssertionError("unreachable")
 
-    async def _ask_once(self, message: str) -> list[dict[str, Any]]:
+    async def _ask_once(
+        self,
+        message: str,
+        *,
+        on_message: Callable[[dict[str, Any]], None] | None = None,
+    ) -> list[dict[str, Any]]:
         assert self._connection is not None
         await self._connection.send(json.dumps({
             "type": "user_message",
@@ -112,32 +122,44 @@ class AgentWebSocketClient:
                     raise ValueError("Unknown agent transport message type")
             except (json.JSONDecodeError, TypeError, ValueError, ValidationError) as exc:
                 raise ValueError("Malformed agent transport message") from exc
-            messages.append(redact_secrets(payload))
+            safe_payload = redact_secrets(payload)
+            messages.append(safe_payload)
+            if on_message is not None:
+                on_message(safe_payload)
             if isinstance(wire_message, ToolRequestMessage):
                 arguments = wire_message.arguments
-                args = arguments.get("args", ())
-                if isinstance(args, str):
-                    args = (args,)
+                raw_args = arguments.get("args", ())
+                fallback_args = [wire_message.action]
+                if isinstance(raw_args, str):
+                    fallback_args.append(raw_args)
+                elif isinstance(raw_args, (list, tuple)):
+                    fallback_args.extend(str(value) for value in raw_args)
                 try:
-                    tool = wire_message.tool
-                    if tool == "cloud":
-                        tool = arguments.get("provider")
-                        if tool not in {"aws", "gcloud"}:
-                            raise ValueError("cloud requests require an aws or gcloud provider")
-                    elif tool == "kubernetes":
-                        tool = "kubectl"
-                    elif tool == "files":
+                    requested_tool = wire_message.tool
+                    executable = requested_tool
+                    if requested_tool == "cloud":
+                        executable = arguments.get("provider")
+                        if executable == "gcp":
+                            executable = "gcloud"
+                        if executable == "azure":
+                            executable = "az"
+                        if executable not in {"aws", "az", "gcloud"}:
+                            raise ValueError("cloud requests require an aws, azure, gcp, or gcloud provider")
+                    elif requested_tool == "kubernetes":
+                        executable = "kubectl"
+                    elif requested_tool == "files":
                         raise ValueError("file requests are not supported by the local CLI")
+                    args = _command_arguments(wire_message.action, arguments, executable)
                     request = ExecutionRequest(
-                        tool=tool,
-                        args=(wire_message.action, *args),
+                        tool=executable,
+                        args=args,
                         cwd=arguments.get("cwd"),
                     )
                     result = self.executor.execute(request, request_id=wire_message.request_id).to_dict()
                 except (TypeError, ValueError, KeyError) as exc:
                     result = {
                         "tool": wire_message.tool,
-                        "args": [wire_message.action, *args],
+                        "args": fallback_args,
                         "exit_code": 400,
                         "stdout": "",
                         "stderr": str(exc),
@@ -157,3 +179,31 @@ class AgentWebSocketClient:
 
 
 __all__ = ["AgentWebSocketClient"]
+
+
+def _command_arguments(action: str, arguments: dict[str, Any], tool: str) -> tuple[str, ...]:
+    """Translate validated structured arguments into a safe argv tuple."""
+
+    positional = arguments.get("args", ())
+    if isinstance(positional, str):
+        positional = (positional,)
+    if not isinstance(positional, (list, tuple)):
+        raise ValueError("args must be a string or a sequence")
+
+    result = [action, *(str(value) for value in positional)]
+    ignored = {"args", "cwd"}
+    if tool in {"aws", "az", "gcloud"}:
+        ignored.add("provider")
+    for key, value in arguments.items():
+        if key in ignored:
+            continue
+        flag = f"--{key.replace('_', '-')}"
+        if isinstance(value, bool):
+            if value:
+                result.append(flag)
+        elif isinstance(value, (list, tuple)):
+            for item in value:
+                result.extend((flag, str(item)))
+        else:
+            result.extend((flag, str(value)))
+    return tuple(result)

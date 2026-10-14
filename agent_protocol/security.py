@@ -31,10 +31,10 @@ _POLICIES: dict[tuple[str, str], OperationClass] = {
 }
 _POLICIES.update({("aws", action): OperationClass.WRITE for action in {"provision", "create", "update", "apply"}})
 _POLICIES.update({("aws", action): OperationClass.DESTRUCTIVE for action in {"delete", "destroy", "terminate"}})
-for tool in ("gcloud", "kubectl", "docker", "git", "files"):
+for tool in ("az", "gcloud", "kubectl", "docker", "git", "files"):
     _POLICIES.update({(tool, action): OperationClass.READ for action in {"status", "get", "list", "describe", "inspect", "diff", "log", "logs", "show", "search", "images", "ps"}})
-_POLICIES.update({(tool, action): OperationClass.WRITE for tool in ("gcloud", "kubectl", "docker", "git", "files") for action in {"provision", "create", "update", "apply", "build", "pull", "run", "start", "write", "add", "commit", "checkout", "copy", "move"}})
-_POLICIES.update({(tool, action): OperationClass.DESTRUCTIVE for tool in ("gcloud", "kubectl", "docker", "git", "files") for action in {"delete", "destroy", "terminate", "remove", "rm", "rmi", "reset", "clean", "prune", "push"}})
+_POLICIES.update({(tool, action): OperationClass.WRITE for tool in ("az", "gcloud", "kubectl", "docker", "git", "files") for action in {"provision", "create", "update", "apply", "build", "pull", "run", "start", "write", "add", "commit", "checkout", "copy", "move"}})
+_POLICIES.update({(tool, action): OperationClass.DESTRUCTIVE for tool in ("az", "gcloud", "kubectl", "docker", "git", "files") for action in {"delete", "destroy", "terminate", "remove", "rm", "rmi", "reset", "clean", "prune", "push"}})
 for tool in ("cloud", "kubernetes"):
     _POLICIES.update({(tool, action): classification for action, classification in (("status", OperationClass.READ), ("get", OperationClass.READ), ("list", OperationClass.READ), ("describe", OperationClass.READ), ("provision", OperationClass.WRITE), ("create", OperationClass.WRITE), ("update", OperationClass.WRITE), ("apply", OperationClass.WRITE), ("delete", OperationClass.DESTRUCTIVE), ("destroy", OperationClass.DESTRUCTIVE), ("remove", OperationClass.DESTRUCTIVE))})
 

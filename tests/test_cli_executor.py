@@ -68,3 +68,25 @@ def test_cli_one_shot_mode_returns_zero(monkeypatch, capsys):
     monkeypatch.setattr("agent_cli.__main__.CommandExecutor", FakeExecutor)
     assert main(["--tool", "git", "status"]) == 0
     assert '"exit_code": 0' in capsys.readouterr().out
+
+
+def test_cli_remote_mode_streams_progress_before_final_result(monkeypatch, capsys):
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_):
+            return None
+
+        async def ask(self, message, *, on_message=None):
+            on_message({"type": "agent_message", "message": "Checking", "final": False})
+            return [{"type": "agent_message", "message": "Done", "final": True}]
+
+    monkeypatch.setattr("agent_cli.websocket_client.AgentWebSocketClient", FakeClient)
+    assert main(["--remote-url", "wss://agent.example/ws", "--token", "token", "--ask", "Check"]) == 0
+    captured = capsys.readouterr()
+    assert "Checking" in captured.err
+    assert captured.out.strip() == "Done"
