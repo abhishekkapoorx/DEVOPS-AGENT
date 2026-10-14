@@ -45,3 +45,8 @@ def test_agent_response_discards_malformed_tool_messages():
 
     assert response.message == "Planning complete"
     assert response.requests == (ToolRequest(tool="docker", action="build", arguments={}),)
+
+
+def test_unknown_tool_actions_fail_closed():
+    with pytest.raises(ValueError, match="Unknown or unauthorized"):
+        ToolRequest(tool="docker", action="execute_shell", arguments={})

@@ -30,7 +30,9 @@ def test_health_and_authentication_endpoints():
     assert client.get("/health").json() == {"status": "ok"}
     assert client.post("/auth/token", json={"token": "wrong"}).status_code == 401
     response = client.post("/auth/token", json={"token": "secret"})
-    assert response.json() == {"authenticated": True, "token_type": "bearer"}
+    assert response.json()["authenticated"] is True
+    assert response.json()["token_type"] == "bearer"
+    assert response.json()["access_token"].startswith("da1.")
 
 
 def test_websocket_rejects_unauthorized_client():
@@ -42,7 +44,8 @@ def test_websocket_rejects_unauthorized_client():
 
 def test_websocket_correlates_tool_result_and_streams_final_message():
     client = TestClient(create_app(auth_token="secret", agent_factory=FakeAgent))
-    with client.websocket_connect("/ws", headers={"Authorization": "Bearer secret"}) as socket:
+    token = client.post("/auth/token", json={"token": "secret", "user_id": "u-1"}).json()["access_token"]
+    with client.websocket_connect("/ws", headers={"Authorization": f"Bearer {token}"}) as socket:
         socket.send_json({"type": "user_message", "message": "Check git", "user_id": "u-1"})
         first = socket.receive_json()
         request = socket.receive_json()
@@ -60,7 +63,8 @@ def test_websocket_correlates_tool_result_and_streams_final_message():
 
 def test_websocket_rejects_malformed_tool_result_without_closing_session():
     client = TestClient(create_app(auth_token="secret", agent_factory=FakeAgent))
-    with client.websocket_connect("/ws", headers={"Authorization": "Bearer secret"}) as socket:
+    token = client.post("/auth/token", json={"token": "secret", "user_id": "cli-user"}).json()["access_token"]
+    with client.websocket_connect("/ws", headers={"Authorization": f"Bearer {token}"}) as socket:
         socket.send_json({"type": "user_message", "message": "Check git"})
         socket.receive_json()
         request = socket.receive_json()

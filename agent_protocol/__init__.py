@@ -6,6 +6,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from .security import OperationClass, OperationPolicy, UnknownOperationError, policy_for, redact_secrets
+
 
 class Message(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -13,6 +15,7 @@ class Message(BaseModel):
 
 class TokenRequest(Message):
     token: str = Field(min_length=1)
+    user_id: str = Field(default="cli-user", min_length=1)
 
 
 class UserMessage(Message):
@@ -55,4 +58,9 @@ __all__ = [
     "ToolRequestMessage",
     "ToolResultMessage",
     "UserMessage",
+    "OperationClass",
+    "OperationPolicy",
+    "UnknownOperationError",
+    "policy_for",
+    "redact_secrets",
 ]
