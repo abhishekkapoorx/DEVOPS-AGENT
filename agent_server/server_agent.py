@@ -91,6 +91,7 @@ class ServerAgent:
     """Asynchronous request-producing agent with an injectable model."""
 
     model: Any | None = None
+    checkpointer: Any | None = None
 
     def __post_init__(self) -> None:
         self._graph = None
@@ -103,6 +104,7 @@ class ServerAgent:
                 system_prompt=SERVER_AGENT_PROMPT,
                 context_schema=SessionContext,
                 name="server_devops_agent",
+                checkpointer=self.checkpointer,
             )
         return self._graph
 
@@ -113,6 +115,7 @@ class ServerAgent:
         session_id: str,
         message: str,
         history: Sequence[BaseMessage] | None = None,
+        run_id: str | None = None,
     ) -> "AgentResponse":
         """Process one message without executing any requested operation."""
 
@@ -124,6 +127,11 @@ class ServerAgent:
         result = await self._get_graph().ainvoke(
             {"messages": messages},
             context=context.model_dump(),
+            config={
+                "configurable": {"thread_id": session_id},
+                "metadata": {"run_id": run_id} if run_id else {},
+                "run_name": "devops_agent_turn",
+            },
         )
         return AgentResponse.from_result(result, context=context)
 
