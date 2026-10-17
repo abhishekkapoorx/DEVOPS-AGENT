@@ -2,6 +2,7 @@
 
 from .runtime import AgentRequest, AgentResponse, AgentRuntime, AgentToolCall
 from .conversations import Conversation, ConversationMessage, ConversationRepository
+from .tools import RegisteredTool, ToolDefinition, ToolExecutionContext, ToolResult
 
 __all__ = [
     "AgentRequest",
@@ -11,4 +12,8 @@ __all__ = [
     "Conversation",
     "ConversationMessage",
     "ConversationRepository",
+    "RegisteredTool",
+    "ToolDefinition",
+    "ToolExecutionContext",
+    "ToolResult",
 ]
