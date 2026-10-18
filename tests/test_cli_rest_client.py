@@ -35,6 +35,8 @@ def test_rest_client_creates_conversation_submits_idempotently_and_replays_sse()
             return _json_response({"id": "conversation-1", "title": "hello"}, 201)
         if request.method == "POST" and path.endswith("/messages"):
             assert request.get_header("Idempotency-key") == "stable-key"
+            assert request.get_header("X-correlation-id")
+            assert request.get_header("Traceparent").startswith("00-")
             assert json.loads(request.data) == {"content": "hello"}
             return _json_response(
                 {"run_id": "run-1", "message_id": "message-1", "status": "pending", "message": "", "tool_calls": []},

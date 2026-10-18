@@ -23,6 +23,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--session-id", help="Resume this conversation ID")
     parser.add_argument("--auth", action="store_true", help="Open the Textual authentication screen")
+    parser.add_argument("--tui", action="store_true", help="Open the Textual conversation interface")
     parser.add_argument("--tool", choices=sorted(SUPPORTED_TOOLS))
     parser.add_argument("args", nargs="*", help="Arguments passed to the selected tool")
     return parser
@@ -70,7 +71,7 @@ def interactive(executor: CommandExecutor | None = None) -> None:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
-    if args.auth or args.ask:
+    if args.auth or args.ask or args.tui or (not args.interactive and args.tool is None):
         if not args.api_url:
             _parser().error("authentication and agent requests require --api-url or DEVOPS_AGENT_API_URL")
         from .auth import DeviceLogin, RestAuthApi, SystemCredentialStore
@@ -90,6 +91,31 @@ def main(argv: Sequence[str] | None = None) -> int:
             if result is not None:
                 print(f"Signed in as {result.user_id}")
             return 0
+        if args.tui or (not args.ask and not args.interactive and args.tool is None):
+            from .rest_client import RestAgentClient
+            from .textual_app import run_textual_app
+
+            def client_factory(initial_tokens):
+                token_holder = [initial_tokens]
+
+                def access_token() -> str:
+                    return token_holder[0].access_token
+
+                def refresh_access_token() -> str | None:
+                    refreshed = auth.restore()
+                    if refreshed is None:
+                        return None
+                    token_holder[0] = refreshed
+                    return refreshed.access_token
+
+                return RestAgentClient(
+                    args.api_url,
+                    access_token=access_token,
+                    refresh_access_token=refresh_access_token,
+                )
+
+            run_textual_app(auth, client_factory)
+            return 0
     if args.ask:
         tokens = auth.restore()
         if tokens is None:
@@ -98,24 +124,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             tokens = run_auth_ui(auth)
             if tokens is None:
                 return 0
-        token_holder = [tokens]
-
-        def access_token() -> str:
-            return token_holder[0].access_token
-
-        def refresh_access_token() -> str | None:
-            refreshed = auth.restore()
-            if refreshed is None:
-                return None
-            token_holder[0] = refreshed
-            return refreshed.access_token
-
         from .rest_client import RestAgentClient
 
         client = RestAgentClient(
             args.api_url,
-            access_token=access_token,
-            refresh_access_token=refresh_access_token,
+            access_token=lambda: tokens.access_token,
+            refresh_access_token=lambda: (
+                (refreshed.access_token if (refreshed := auth.restore()) else None)
+            ),
         )
         result = client.ask(
             args.ask,

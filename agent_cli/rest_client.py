@@ -54,6 +54,8 @@ class RestAgentClient:
         self.timeout = timeout
         self.max_reconnects = max_reconnects
         self.sleep = sleep
+        self._correlation_id = ""
+        self._traceparent = ""
 
     def ask(
         self,
@@ -65,6 +67,9 @@ class RestAgentClient:
     ) -> dict[str, Any]:
         if not message.strip():
             raise ValueError("message must not be empty")
+        trace_id = uuid4().hex
+        self._correlation_id = trace_id
+        self._traceparent = f"00-{trace_id}-{uuid4().hex[:16]}-01"
         if conversation_id is None:
             conversation = self._json_request(
                 "POST", "/v1/conversations", {"title": message[:200] or "New conversation"}
@@ -93,6 +98,33 @@ class RestAgentClient:
                     raise RestApiError(502, str(state.get("error") or "Agent Run failed"))
                 return state
         raise RestApiError(503, "Agent Run is still in progress; reconnect and replay its events")
+
+    def list_conversations(self) -> list[dict[str, Any]]:
+        response = self._json_request("GET", "/v1/conversations")
+        if not isinstance(response, list) or any(not isinstance(item, dict) for item in response):
+            raise RestApiError(502, "Agent API returned an invalid conversation list")
+        return response
+
+    def create_conversation(self, title: str = "New conversation") -> dict[str, Any]:
+        response = self._json_request("POST", "/v1/conversations", {"title": title[:200]})
+        if not isinstance(response, dict) or not isinstance(response.get("id"), str):
+            raise RestApiError(502, "Agent API returned an invalid conversation")
+        return response
+
+    def list_messages(self, conversation_id: str) -> list[dict[str, Any]]:
+        path = f"/v1/conversations/{urllib.parse.quote(conversation_id, safe='')}/messages"
+        response = self._json_request("GET", path)
+        if not isinstance(response, list) or any(not isinstance(item, dict) for item in response):
+            raise RestApiError(502, "Agent API returned an invalid message list")
+        return response
+
+    def cancel_run(self, run_id: str) -> dict[str, Any]:
+        response = self._json_request(
+            "DELETE", f"/v1/runs/{urllib.parse.quote(run_id, safe='')}"
+        )
+        if not isinstance(response, dict):
+            raise RestApiError(502, "Agent API returned an invalid cancellation response")
+        return response
 
     def _read_event_stream(
         self,
@@ -168,7 +200,7 @@ class RestAgentClient:
         body: dict[str, object] | None = None,
         *,
         headers: Mapping[str, str] | None = None,
-    ) -> dict[str, Any]:
+    ) -> Any:
         token = self._access_token
         for attempt in range(2):
             request = self._request(method, path, body, headers=headers, token=token)
@@ -185,7 +217,7 @@ class RestAgentClient:
                 if response.status == 204:
                     return {}
                 data = json.loads(response.read())
-                if not isinstance(data, dict):
+                if not isinstance(data, (dict, list)):
                     raise RestApiError(502, "Agent API returned an invalid response")
                 return data
             finally:
@@ -218,6 +250,10 @@ class RestAgentClient:
     ):
         payload = None if body is None else json.dumps(body).encode("utf-8")
         request_headers = {"Accept": "application/json"}
+        if self._correlation_id:
+            request_headers["X-Correlation-ID"] = self._correlation_id
+        if self._traceparent:
+            request_headers["traceparent"] = self._traceparent
         if payload is not None:
             request_headers["Content-Type"] = "application/json"
         if token:

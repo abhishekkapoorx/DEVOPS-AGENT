@@ -10,11 +10,18 @@ process and are never included in transport messages.
 
 Sign in or create an account through the Textual browser-assisted flow. The
 CLI stores only its rotating refresh credential in the system keyring (with a
-protected local fallback where no keyring is available):
+protected local fallback where no keyring is available). Launch the full
+conversation interface with `--tui` (or run the CLI without a local tool
+command):
 
 ```bash
-devops-agent --api-url https://agent.example.com --auth
+devops-agent --api-url https://agent.example.com --tui
 ```
+
+The Textual interface lists and reopens server-side conversations, streams
+agent progress, and can cancel an active run. It remembers the selected
+conversation ID locally; conversation messages remain on the backend.
+`--auth` opens the standalone sign-in/sign-up screen.
 
 Ask the agent through the REST API. If the browser session is missing, the CLI
 starts sign-in automatically; use `--session-id` to continue a conversation:
