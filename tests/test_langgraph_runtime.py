@@ -83,3 +83,50 @@ async def test_runtime_preserves_tool_call_ids_and_reintroduces_structured_resul
 
     assert result.tool_calls[0].call_id == "call-42"
     assert agent.kwargs["tool_results"][0]["call_id"] == "call-previous"
+
+
+@pytest.mark.asyncio
+async def test_runtime_does_not_replay_database_history_when_checkpoint_exists():
+    class Checkpointer:
+        async def aget_tuple(self, config):
+            assert config["configurable"]["thread_id"]
+            return object()
+
+    class CheckpointedAgent(FakeAgent):
+        checkpointer = Checkpointer()
+
+    agent = CheckpointedAgent()
+    runtime = LangGraphRuntime(agent=agent)
+    request = AgentRequest(
+        user_id="user-1",
+        conversation_id="conversation-1",
+        run_id="run-2",
+        message="second turn",
+        history=({"role": "user", "content": "first turn"},),
+    )
+
+    await runtime.run(request)
+
+    assert agent.kwargs["history"] == ()
+
+
+@pytest.mark.asyncio
+async def test_runtime_reconstructs_history_when_no_checkpoint_exists():
+    class Checkpointer:
+        async def aget_tuple(self, config):
+            return None
+
+    class CheckpointedAgent(FakeAgent):
+        checkpointer = Checkpointer()
+
+    agent = CheckpointedAgent()
+    await LangGraphRuntime(agent=agent).run(
+        AgentRequest(
+            user_id="user-1",
+            conversation_id="conversation-1",
+            run_id="run-1",
+            message="current",
+            history=({"role": "user", "content": "earlier"},),
+        )
+    )
+    assert [item.content for item in agent.kwargs["history"]] == ["earlier"]

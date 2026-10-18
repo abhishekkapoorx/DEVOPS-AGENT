@@ -28,11 +28,22 @@ class LangGraphRuntime:
     async def run(self, request: AgentRequest) -> AgentResponse:
         """Run a turn and translate LangGraph output to domain contracts."""
 
+        thread_id = _thread_id(request.user_id, request.conversation_id)
+        history = tuple(_history_message(item) for item in request.history)
+        checkpointer = getattr(self._agent, "checkpointer", None)
+        if checkpointer is not None:
+            checkpoint = await checkpointer.aget_tuple(
+                {"configurable": {"thread_id": thread_id}}
+            )
+            if checkpoint is not None:
+                # The stable thread already owns its message history. Replaying the
+                # database history would append every prior message a second time.
+                history = ()
         response = await self._agent.arun(
             user_id=request.user_id,
-            session_id=_thread_id(request.user_id, request.conversation_id),
+            session_id=thread_id,
             message=request.message,
-            history=tuple(_history_message(item) for item in request.history),
+            history=history,
             tool_results=request.tool_results,
             run_id=request.run_id,
             correlation_id=request.correlation_id,
