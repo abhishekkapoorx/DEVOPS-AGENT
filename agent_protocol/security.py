@@ -51,6 +51,7 @@ _SECRET_PATTERNS = (
     re.compile(r"(?i)(aws_secret_access_key|aws_access_key_id|token|password|secret|api[_-]?key)(\s*[=:]\s*)[^\s,;]+"),
     re.compile(r"\b(?:ghp|github_pat|sk|xox[baprs])_[A-Za-z0-9_-]+\b"),
 )
+_SECRET_KEY = re.compile(r"(?i)(?:^|[_-])(token|password|secret|api[_-]?key|authorization)(?:$|[_-])")
 
 
 def redact_secrets(value: Any) -> Any:
@@ -62,7 +63,10 @@ def redact_secrets(value: Any) -> Any:
             result = pattern.sub(lambda match: f"{match.group(1) if match.lastindex else ''}{match.group(2) if match.lastindex and match.lastindex > 1 else ''}[REDACTED]", result)
         return result
     if isinstance(value, dict):
-        return {str(key): redact_secrets(item) for key, item in value.items()}
+        return {
+            str(key): "[REDACTED]" if _SECRET_KEY.search(str(key)) else redact_secrets(item)
+            for key, item in value.items()
+        }
     if isinstance(value, (list, tuple)):
         return type(value)(redact_secrets(item) for item in value)
     return value
