@@ -56,6 +56,7 @@ class DeviceApproval(BaseModel):
 
 class AuthenticatedUser(BaseModel):
     user_id: str
+    scopes: frozenset[str] = frozenset()
 
 
 class DevicePresentation(BaseModel):
@@ -259,7 +260,7 @@ class AuthSessionService:
         claims = verify_access_token(access_token, self.access_token_secret)
         if claims is None or (claimed_user_id is not None and claimed_user_id != claims.user_id):
             return None
-        return AuthenticatedUser(user_id=claims.user_id)
+        return AuthenticatedUser(user_id=claims.user_id, scopes=claims.scopes)
 
     def _tokens(self, user_id: str, refresh_token: str) -> TokenPair:
         return TokenPair(
