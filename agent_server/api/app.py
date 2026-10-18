@@ -2,15 +2,23 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
-from typing import Callable
-from uuid import uuid4
+import hashlib
+import json
+from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Query, Response, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from agent_core import AgentRequest, AgentRuntime
+from agent_core import AgentRuntime
 from agent_core.conversations import ConversationRepository
+from agent_core.runs import IdempotencyConflict, RunRepository, RunState
+from agent_server.auth_sessions import AuthSessionService
+from agent_server.run_worker import AgentRunWorker
+from .auth_routes import create_auth_router
+from .security import require_authenticated_user
 
 
 @dataclass(frozen=True)
@@ -40,23 +48,65 @@ class MessageOutput(BaseModel):
 
 class TurnOutput(BaseModel):
     run_id: str
+    message_id: str
+    status: RunState
     message: str
     tool_calls: list[dict[str, object]]
+
+
+class RunOutput(TurnOutput):
+    error: str | None = None
+
+
+class RunEventOutput(BaseModel):
+    sequence: int
+    type: str
+    data: dict[str, object]
+    created_at: str
 
 
 def create_app(
     *,
     runtime: AgentRuntime,
     conversations: ConversationRepository,
-    authenticate: Callable[..., AuthenticatedPrincipal],
+    runs: RunRepository,
+    auth_service: AuthSessionService,
+    run_worker: AgentRunWorker | None = None,
 ) -> FastAPI:
     """Create an API with auth and storage adapters supplied by deployment."""
 
-    app = FastAPI(title="DevOps Agent API", version="1")
+    worker = run_worker or AgentRunWorker(
+        runtime=runtime, conversations=conversations, runs=runs
+    )
+
+    @asynccontextmanager
+    async def lifespan(_app):
+        stopping = asyncio.Event()
+        worker_task = asyncio.create_task(worker.run_forever(stopping))
+        try:
+            yield
+        finally:
+            stopping.set()
+            await worker_task
+
+    app = FastAPI(title="DevOps Agent API", version="1", lifespan=lifespan)
+    app.include_router(create_auth_router(auth_service))
+
+    def authenticate(
+        authorization: str | None = Header(default=None),
+    ) -> AuthenticatedPrincipal:
+        user = require_authenticated_user(authorization, auth_service)
+        return AuthenticatedPrincipal(user_id=user.user_id)
 
     @app.get("/health/live", tags=["health"])
     async def live() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.get("/health/ready", tags=["health"])
+    async def ready() -> dict[str, str]:
+        if not await conversations.health_check():
+            raise HTTPException(status_code=503, detail="Persistence is unavailable")
+        return {"status": "ready"}
 
     @app.post(
         "/v1/conversations",
@@ -112,42 +162,116 @@ def create_app(
     async def send_message(
         conversation_id: str,
         body: ConversationMessageInput,
+        background_tasks: BackgroundTasks,
+        response: Response,
+        idempotency_key: str = Header(alias="Idempotency-Key", min_length=1, max_length=255),
         principal: AuthenticatedPrincipal = Depends(authenticate),
     ) -> TurnOutput:
         conversation = await conversations.get(principal.user_id, conversation_id)
         if conversation is None:
             raise HTTPException(status_code=404, detail="Conversation not found")
-        previous = await conversations.list_messages(principal.user_id, conversation_id)
-        user_message = await conversations.add_message(
-            principal.user_id, conversation_id, "user", body.content
-        )
-        run_id = uuid4().hex
-        result = await runtime.run(
-            AgentRequest(
-                user_id=principal.user_id,
-                conversation_id=conversation_id,
-                run_id=run_id,
-                message=body.content,
-                history=tuple(
-                    {"role": item.role, "content": item.content}
-                    for item in (*previous, user_message)
-                ),
+        request_hash = hashlib.sha256(body.content.encode("utf-8")).hexdigest()
+        try:
+            run, is_new = await runs.create_or_get_run(
+                principal.user_id,
+                conversation_id,
+                idempotency_key,
+                request_hash,
+                body.content,
             )
-        )
-        if result.message:
-            await conversations.add_message(
-                principal.user_id, conversation_id, "assistant", result.message
+        except IdempotencyConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except LookupError as exc:
+            raise HTTPException(status_code=404, detail="Conversation not found") from exc
+
+        if not is_new:
+            if run.state in {"pending", "running", "waiting_for_approval"}:
+                response.status_code = status.HTTP_202_ACCEPTED
+                background_tasks.add_task(worker.run_once)
+            return _run_output(run)
+
+        response.status_code = status.HTTP_202_ACCEPTED
+        background_tasks.add_task(worker.run_once)
+        return _run_output(run)
+
+    @app.get("/v1/runs/{run_id}", response_model=RunOutput, tags=["runs"])
+    async def get_run(
+        run_id: str,
+        principal: AuthenticatedPrincipal = Depends(authenticate),
+    ) -> RunOutput:
+        run = await runs.get_run(principal.user_id, run_id)
+        if run is None:
+            raise HTTPException(status_code=404, detail="Run not found")
+        return _run_output(run)
+
+    @app.get("/v1/runs/{run_id}/events", response_model=list[RunEventOutput], tags=["runs"])
+    async def list_run_events(
+        run_id: str,
+        after: int = Query(default=0, ge=0),
+        principal: AuthenticatedPrincipal = Depends(authenticate),
+    ) -> list[RunEventOutput]:
+        if await runs.get_run(principal.user_id, run_id) is None:
+            raise HTTPException(status_code=404, detail="Run not found")
+        events = await runs.list_run_events(principal.user_id, run_id, after)
+        return [
+            RunEventOutput(
+                sequence=event.sequence,
+                type=event.event_type,
+                data=dict(event.data),
+                created_at=event.created_at.isoformat(),
             )
-        return TurnOutput(
-            run_id=run_id,
-            message=result.message,
-            tool_calls=[
-                {"call_id": call.call_id, "name": call.name, "arguments": dict(call.arguments)}
-                for call in result.tool_calls
-            ],
+            for event in events
+        ]
+
+    @app.get("/v1/runs/{run_id}/events/stream", tags=["runs"])
+    async def stream_run_events(
+        run_id: str,
+        after: int = Query(default=0, ge=0),
+        principal: AuthenticatedPrincipal = Depends(authenticate),
+    ) -> StreamingResponse:
+        if await runs.get_run(principal.user_id, run_id) is None:
+            raise HTTPException(status_code=404, detail="Run not found")
+
+        async def events():
+            sequence = after
+            terminal_states = {"completed", "failed", "cancelled", "expired"}
+            while True:
+                current = await runs.get_run(principal.user_id, run_id)
+                if current is None:
+                    return
+                pending = await runs.list_run_events(principal.user_id, run_id, sequence)
+                for event in pending:
+                    sequence = event.sequence
+                    data = {**dict(event.data), "created_at": event.created_at.isoformat()}
+                    yield (
+                        f"id: {event.sequence}\n"
+                        f"event: {event.event_type}\n"
+                        f"data: {json.dumps(data, separators=(',', ':'))}\n\n"
+                    )
+                if current.state in terminal_states and not pending:
+                    return
+                if not pending:
+                    yield ": keep-alive\n\n"
+                    await asyncio.sleep(1)
+
+        return StreamingResponse(
+            events(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
     return app
+
+
+def _run_output(run) -> RunOutput:
+    return RunOutput(
+        run_id=run.id,
+        message_id=run.message_id,
+        status=run.state,
+        message=run.message,
+        tool_calls=[dict(call) for call in run.tool_calls],
+        error=run.error,
+    )
 
 
 __all__ = ["AuthenticatedPrincipal", "create_app"]

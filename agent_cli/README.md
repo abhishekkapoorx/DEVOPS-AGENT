@@ -8,12 +8,20 @@ or the server-side agent. Commands are always passed as structured argv lists;
 there is no shell execution path. Cloud credentials remain in the local
 process and are never included in transport messages.
 
-For an authenticated remote agent, use the WebSocket transport (use `wss://`
-in production):
+Sign in or create an account through the Textual browser-assisted flow. The
+CLI stores only its rotating refresh credential in the system keyring (with a
+protected local fallback where no keyring is available):
 
 ```bash
-devops-agent --remote-url wss://agent.example.com/ws \
-  --token "$DEVOPS_AGENT_ACCESS_TOKEN" --ask "Check git status"
+devops-agent --api-url https://agent.example.com --auth
+```
+
+Ask the agent through the REST API. If the browser session is missing, the CLI
+starts sign-in automatically; use `--session-id` to continue a conversation:
+
+```bash
+devops-agent --api-url https://agent.example.com \
+  --ask "Check git status"
 ```
 
 One-shot execution:

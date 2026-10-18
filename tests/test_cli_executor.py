@@ -70,23 +70,34 @@ def test_cli_one_shot_mode_returns_zero(monkeypatch, capsys):
     assert '"exit_code": 0' in capsys.readouterr().out
 
 
-def test_cli_remote_mode_streams_progress_before_final_result(monkeypatch, capsys):
+def test_cli_rest_mode_streams_progress_before_final_result(monkeypatch, capsys):
     class FakeClient:
         def __init__(self, *args, **kwargs):
             pass
 
-        async def __aenter__(self):
-            return self
+        def ask(self, message, *, conversation_id=None, on_event=None):
+            on_event({"type": "agent_message", "message": "Checking", "final": False})
+            return {"message": "Done"}
 
-        async def __aexit__(self, *_):
-            return None
+    class FakeTokens:
+        access_token = "short-lived-access"
+        user_id = "verified-user"
 
-        async def ask(self, message, *, on_message=None):
-            on_message({"type": "agent_message", "message": "Checking", "final": False})
-            return [{"type": "agent_message", "message": "Done", "final": True}]
+    class FakeAuth:
+        def __init__(self, **kwargs):
+            pass
 
-    monkeypatch.setattr("agent_cli.websocket_client.AgentWebSocketClient", FakeClient)
-    assert main(["--remote-url", "wss://agent.example/ws", "--token", "token", "--ask", "Check"]) == 0
+        def restore(self):
+            return FakeTokens()
+
+    monkeypatch.setattr("agent_cli.rest_client.RestAgentClient", FakeClient)
+    monkeypatch.setattr("agent_cli.auth.DeviceLogin", FakeAuth)
+    assert main(["--api-url", "https://agent.example", "--ask", "Check"]) == 0
     captured = capsys.readouterr()
     assert "Checking" in captured.err
     assert captured.out.strip() == "Done"
+
+
+def test_cli_does_not_accept_access_tokens_as_arguments():
+    with pytest.raises(SystemExit):
+        main(["--api-url", "https://agent.example", "--token", "secret", "--ask", "Check"])

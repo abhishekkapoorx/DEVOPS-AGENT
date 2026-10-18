@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Callable, Mapping, Protocol
+from typing import Any, Callable, Literal, Mapping, Protocol
 
 from pydantic import BaseModel
 
@@ -34,7 +34,7 @@ class ToolExecutionContext:
 class ToolResult:
     call_id: str
     name: str
-    status: str
+    status: Literal["succeeded", "failed", "rejected", "approval_required", "running"]
     output: Mapping[str, Any] = field(default_factory=dict)
     error: str | None = None
     duration_ms: float = 0.0
