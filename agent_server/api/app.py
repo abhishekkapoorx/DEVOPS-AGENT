@@ -79,6 +79,7 @@ def create_app(
     tool_scopes_for_user: Callable[[str], frozenset[str]] = lambda _user_id: frozenset(),
     rate_limiter: InMemoryRateLimiter | None = None,
     metrics: HttpMetrics | None = None,
+    database_engine=None,
 ) -> FastAPI:
     """Create an API with auth and storage adapters supplied by deployment."""
 
@@ -98,7 +99,11 @@ def create_app(
             yield
         finally:
             stopping.set()
-            await worker_task
+            try:
+                await worker_task
+            finally:
+                if database_engine is not None:
+                    await database_engine.dispose()
 
     app = FastAPI(title="DevOps Agent API", version="1", lifespan=lifespan)
     request_metrics = metrics or HttpMetrics()

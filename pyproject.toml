@@ -22,14 +22,21 @@ server = [
     "fastapi>=0.119,<1",
     "langchain>=1,<2",
     "langchain-core>=1,<2",
+    "langchain-google-genai>=3,<4",
+    "langchain-groq>=1,<2",
+    "langchain-ollama>=1,<2",
+    "langchain-openai>=1,<2",
     "langgraph-checkpoint-postgres>=3,<4",
     "pydantic>=2.11,<3",
+    "python-multipart>=0.0.20,<1",
     "sqlalchemy[asyncio]>=2.0,<3",
     "uvicorn>=0.35,<1",
 ]
 
 [project.scripts]
 devops-agent = "agent_cli.__main__:main"
+devops-agent-api = "agent_server.api_main:main"
+devops-agent-tools = "agent_server.tool_main:main"
 
 [tool.setuptools.packages.find]
 include = ["agent_core*", "agent_protocol*", "agent_cli*", "agent_server*"]

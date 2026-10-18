@@ -94,7 +94,10 @@ async def postgres_runtime(database_url: str, *, model: Any | None = None):
 
     from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
-    async with AsyncPostgresSaver.from_conn_string(database_url) as checkpointer:
+    # AsyncPostgresSaver uses psycopg's URL syntax, while the SQLAlchemy
+    # repository factory accepts the driver-qualified asyncpg form.
+    checkpoint_url = database_url.replace("postgresql+asyncpg://", "postgresql://", 1)
+    async with AsyncPostgresSaver.from_conn_string(checkpoint_url) as checkpointer:
         await checkpointer.setup()
         yield LangGraphRuntime(model=model, checkpointer=checkpointer)
 

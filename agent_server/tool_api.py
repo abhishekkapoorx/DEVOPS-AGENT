@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from collections.abc import Callable
 import json
 from typing import Any
@@ -103,6 +104,7 @@ def create_tool_router(
 def create_tool_service_app(
     *, service: ToolService, auth_service: AuthSessionService,
     scopes_for_user: Callable[[str], frozenset[str]] | None = None,
+    database_engine=None,
 ) -> FastAPI:
     """Build a standalone Tool Service app with verified user identity."""
 
@@ -111,8 +113,21 @@ def create_tool_service_app(
         scopes = scopes_for_user(user.user_id) if scopes_for_user else user.scopes
         return ToolPrincipal(user_id=user.user_id, scopes=scopes)
 
-    app = FastAPI(title="DevOps Tool Service", version="1")
+    @asynccontextmanager
+    async def lifespan(_app):
+        try:
+            yield
+        finally:
+            if database_engine is not None:
+                await database_engine.dispose()
+
+    app = FastAPI(title="DevOps Tool Service", version="1", lifespan=lifespan)
     app.include_router(create_tool_router(service, resolve_principal))
+
+    @app.get("/health/live", tags=["health"])
+    async def live() -> dict[str, str]:
+        return {"status": "ok"}
+
     return app
 
 
