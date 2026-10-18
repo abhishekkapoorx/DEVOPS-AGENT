@@ -179,3 +179,28 @@ async def test_worker_cancellation_stops_the_active_runtime_task():
         await task
     cancelled = await repository.get_run("user-1", run.id)
     assert cancelled is not None and cancelled.state == "cancelled"
+
+
+@pytest.mark.asyncio
+async def test_worker_logs_sanitized_runtime_failure_but_persists_generic_error(caplog):
+    repository = InMemoryConversationRepository()
+    conversation = await repository.create("user-1", "test")
+    run, _ = await repository.create_or_get_run(
+        "user-1", conversation.id, "key-1", "hash-1", "hello"
+    )
+
+    class FailingRuntime:
+        async def run(self, request):
+            raise RuntimeError("provider rejected api_key=example-secret")
+
+    worker = AgentRunWorker(
+        runtime=FailingRuntime(), conversations=repository, runs=repository
+    )
+    await worker.run_once()
+
+    restored = await repository.get_run("user-1", run.id)
+    assert restored is not None and restored.state == "failed"
+    assert restored.error == "Agent runtime failed"
+    assert "RuntimeError" in caplog.text
+    assert "[REDACTED]" in caplog.text
+    assert "example-secret" not in caplog.text

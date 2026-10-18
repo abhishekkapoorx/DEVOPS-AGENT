@@ -264,7 +264,12 @@ class PostgresConversationRepository:
                     updated_at=now,
                 )
                 conversation.updated_at = now
-                session.add_all([message, run])
+                # The run's message_id is an immediate PostgreSQL FK. Flush the
+                # parent row first instead of relying on unit-of-work ordering
+                # between independent mappers (there is no ORM relationship).
+                session.add(message)
+                await session.flush()
+                session.add(run)
                 await session.flush()
                 session.add(
                     RunEventRow(

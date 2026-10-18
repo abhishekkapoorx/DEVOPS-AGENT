@@ -164,7 +164,16 @@ class AgentRunWorker:
         except RunLeaseLost:
             # The lease expired and another worker owns the retry.
             return
-        except Exception:
+        except Exception as exc:
+            # Keep the client-facing run error generic, but preserve a sanitized
+            # diagnostic in API logs so provider/configuration failures can be
+            # distinguished from persistence and tool-service failures.
+            logger.error(
+                "Agent Run %s failed (%s): %s",
+                run.id,
+                type(exc).__name__,
+                redact_secrets(str(exc)),
+            )
             try:
                 await self.runs.fail_run(
                     run.user_id, run.id, self.worker_id, "Agent runtime failed"

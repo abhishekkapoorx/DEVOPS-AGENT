@@ -4,10 +4,10 @@ This repository includes a deliberately scoped development identity page. It
 is for a disposable local stack only; production must supply a real website
 approval provider before it can start.
 
-1. Copy `.env.example` to `.env.compose` and replace the access-token secret
+1. Copy `.env.example` to `.env` and replace the access-token secret
    with a random value of at least 32 characters. The explicit env-file name
    avoids conflicts with shell-style `.env` files used by other local tools.
-2. Start the complete stack with `docker compose --env-file .env.compose up --build`. The `migrate`
+2. Start the complete stack with `docker compose --env-file .env up --build`. The `migrate`
    service applies Alembic migrations before the API and Tool Service start.
 3. In another shell install the CLI (`python -m pip install -e ".[cli]"`) and
    run `devops-agent --auth --api-url http://127.0.0.1:8000`. Open the printed

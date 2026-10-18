@@ -2,6 +2,8 @@ import asyncio
 import io
 import json
 
+import pytest
+
 from agent_core.tools import ToolExecutionContext
 from agent_server.tool_client import RestToolServiceClient
 
@@ -62,3 +64,18 @@ def test_rest_tool_service_client_sends_correlation_and_idempotency_context():
     assert requests[0].get_header("Idempotency-key") == "idem-1"
     assert requests[0].get_header("X-correlation-id") == "corr-1"
     assert requests[0].get_header("Traceparent") == "00-abc-def-01"
+
+
+def test_tool_client_requires_explicit_permission_for_non_loopback_http():
+    access_token = lambda _context: "token"
+
+    with pytest.raises(ValueError, match="HTTPS"):
+        RestToolServiceClient("http://tool-service:8001", access_token=access_token)
+
+    client = RestToolServiceClient(
+        "http://tool-service:8001",
+        access_token=access_token,
+        allow_insecure_http=True,
+    )
+
+    assert client.base_url == "http://tool-service:8001"

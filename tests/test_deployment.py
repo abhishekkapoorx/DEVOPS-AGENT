@@ -14,7 +14,11 @@ from agent_server.auth import issue_access_token
 from agent_server.auth_sessions import (
     AuthSessionService, DeviceApproval, DeviceStatus,
 )
-from agent_server.deployment import Settings, _mount_development_approval
+from agent_server.deployment import (
+    Settings,
+    _is_development_compose_tool_url,
+    _mount_development_approval,
+)
 from agent_server.development_auth import DevelopmentApprovalProvider
 from agent_server.persistence.memory import InMemoryConversationRepository
 from agent_server.registered_tools import build_default_registry
@@ -182,10 +186,32 @@ def test_settings_supports_repeatable_echo_smoke_configuration(monkeypatch):
     workspace = Path.cwd().resolve()
     monkeypatch.setenv("DEVOPS_AGENT_TOOL_REPOSITORIES", f"workspace={workspace}")
 
-    settings = Settings.from_environment()
+    settings = Settings.from_environment(include_tool_repositories=True)
 
     assert settings.runtime == "echo"
     assert settings.repositories == {"workspace": workspace}
+
+
+def test_api_settings_do_not_require_tool_repository_mount(monkeypatch):
+    from uuid import uuid4
+
+    missing_repository = Path.cwd() / f"missing-repository-{uuid4().hex}"
+    monkeypatch.setenv("DATABASE_URL", "postgresql://devops:devops@localhost/devops")
+    monkeypatch.setenv("DEVOPS_AGENT_ACCESS_TOKEN_SECRET", "x" * 32)
+    monkeypatch.setenv("DEVOPS_AGENT_PUBLIC_BASE_URL", "http://localhost:8000")
+    monkeypatch.setenv("DEVOPS_AGENT_AUTH_MODE", "development")
+    monkeypatch.setenv("DEVOPS_AGENT_RUNTIME", "echo")
+    monkeypatch.setenv("DEVOPS_AGENT_TOOL_REPOSITORIES", f"workspace={missing_repository}")
+
+    settings = Settings.from_environment()
+
+    assert settings.repositories == {}
+
+
+def test_only_development_compose_tool_url_uses_http():
+    assert _is_development_compose_tool_url("http://tool-service:8001", "development")
+    assert not _is_development_compose_tool_url("http://other-service:8001", "development")
+    assert not _is_development_compose_tool_url("http://tool-service:8001", "production")
 
 
 def test_development_approval_page_escapes_configured_identity_and_ignores_form_identity():

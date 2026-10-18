@@ -7,6 +7,7 @@ from html import escape
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI, Form, HTTPException
 from fastapi.responses import HTMLResponse
@@ -41,7 +42,7 @@ class Settings:
     tool_scopes: frozenset[str]
 
     @classmethod
-    def from_environment(cls) -> "Settings":
+    def from_environment(cls, *, include_tool_repositories: bool = False) -> "Settings":
         required = ("DATABASE_URL", "DEVOPS_AGENT_ACCESS_TOKEN_SECRET", "DEVOPS_AGENT_PUBLIC_BASE_URL")
         missing = [key for key in required if not os.environ.get(key)]
         if missing:
@@ -66,7 +67,11 @@ class Settings:
             provider_key = "GOOGLE_API_KEY"
         if runtime == "langgraph" and provider != "ollama" and not os.getenv(provider_key):
             raise RuntimeError(f"{provider_key} is required for the selected model provider")
-        repositories = _repositories(os.getenv("DEVOPS_AGENT_TOOL_REPOSITORIES", ""))
+        repositories = (
+            _repositories(os.getenv("DEVOPS_AGENT_TOOL_REPOSITORIES", ""))
+            if include_tool_repositories
+            else {}
+        )
         return cls(
             database_url=database_url,
             access_token_secret=secret,
@@ -131,14 +136,22 @@ def create_api_from_environment() -> FastAPI:
     engine, sessions = create_session_factory(settings.database_url)
     provider = DevelopmentApprovalProvider(settings.public_base_url)
     auth = AuthSessionService(repository=PostgresAuthRepository(sessions), approval_provider=provider, access_token_secret=settings.access_token_secret)
-    client = RestToolServiceClient(settings.tool_service_url, access_token=lambda context: issue_access_token(settings.access_token_secret, context.user_id, scopes=settings.tool_scopes))
+    client = RestToolServiceClient(
+        settings.tool_service_url,
+        access_token=lambda context: issue_access_token(
+            settings.access_token_secret, context.user_id, scopes=settings.tool_scopes
+        ),
+        allow_insecure_http=_is_development_compose_tool_url(
+            settings.tool_service_url, settings.auth_mode
+        ),
+    )
     app = create_app(runtime=_runtime(settings), conversations=PostgresConversationRepository(sessions), runs=PostgresConversationRepository(sessions), auth_service=auth, tool_executor=client, tool_scopes_for_user=lambda _user: settings.tool_scopes, database_engine=engine)
     _mount_development_approval(app, provider, settings)
     return app
 
 
 def create_tool_service_from_environment() -> FastAPI:
-    settings = Settings.from_environment()
+    settings = Settings.from_environment(include_tool_repositories=True)
     engine, sessions = create_session_factory(settings.database_url)
     auth = AuthSessionService(repository=PostgresAuthRepository(sessions), approval_provider=DevelopmentApprovalProvider(settings.public_base_url), access_token_secret=settings.access_token_secret)
     service = ToolService(build_default_registry(settings.repositories), audit_repository=PostgresToolExecutionRepository(sessions))
@@ -173,6 +186,18 @@ def _repositories(value: str) -> dict[str, Path]:
             raise RuntimeError("DEVOPS_AGENT_TOOL_REPOSITORIES must be comma-separated name=existing-directory entries")
         result[name] = path
     return result
+
+
+def _is_development_compose_tool_url(value: str, auth_mode: str) -> bool:
+    parsed = urlsplit(value)
+    return (
+        auth_mode == "development"
+        and parsed.scheme == "http"
+        and parsed.hostname == "tool-service"
+        and parsed.port == 8001
+        and parsed.username is None
+        and parsed.password is None
+    )
 
 
 __all__ = ["Settings", "create_api_from_environment", "create_tool_service_from_environment"]

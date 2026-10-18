@@ -25,8 +25,13 @@ class RestToolServiceClient:
         access_token: Callable[[ToolExecutionContext], str],
         timeout: float = 30.0,
         opener: Callable[..., Any] = urllib.request.urlopen,
+        allow_insecure_http: bool = False,
     ) -> None:
-        if not base_url.startswith("https://") and not _is_loopback(base_url):
+        if (
+            not base_url.startswith("https://")
+            and not _is_loopback(base_url)
+            and not allow_insecure_http
+        ):
             raise ValueError("Tool Service requires HTTPS outside localhost")
         if timeout <= 0:
             raise ValueError("timeout must be positive")
