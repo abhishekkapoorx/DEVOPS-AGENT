@@ -28,6 +28,8 @@ class AgentRun:
     message: str = ""
     tool_calls: tuple[Mapping[str, object], ...] = ()
     error: str | None = None
+    correlation_id: str = ""
+    traceparent: str | None = None
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -57,6 +59,9 @@ class RunRepository(Protocol):
         idempotency_key: str,
         request_hash: str,
         content: str,
+        *,
+        correlation_id: str = "",
+        traceparent: str | None = None,
     ) -> tuple[AgentRun, bool]: ...
 
     async def claim_next_run(self, worker_id: str, lease_seconds: int) -> AgentRun | None: ...
@@ -75,6 +80,8 @@ class RunRepository(Protocol):
     async def fail_run(
         self, user_id: str, run_id: str, worker_id: str, error: str
     ) -> AgentRun: ...
+
+    async def cancel_run(self, user_id: str, run_id: str) -> AgentRun | None: ...
 
     async def get_run(self, user_id: str, run_id: str) -> AgentRun | None: ...
 

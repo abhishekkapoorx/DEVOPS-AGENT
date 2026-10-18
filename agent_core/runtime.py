@@ -12,6 +12,7 @@ class AgentToolCall:
 
     call_id: str
     name: str
+    version: str = "1.0.0"
     arguments: Mapping[str, Any] = field(default_factory=dict)
 
 
@@ -24,6 +25,9 @@ class AgentRequest:
     run_id: str
     message: str
     history: Sequence[Mapping[str, Any]] = ()
+    tool_results: Sequence[Mapping[str, Any]] = ()
+    correlation_id: str = ""
+    traceparent: str | None = None
 
     def __post_init__(self) -> None:
         if not self.user_id or not self.conversation_id or not self.run_id:

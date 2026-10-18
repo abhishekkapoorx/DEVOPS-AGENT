@@ -31,3 +31,4 @@ def test_run_migration_follows_auth_and_creates_leased_run_tables():
 
     assert assignments == {"revision": "0003_agent_runs", "down_revision": "0002_auth_sessions"}
     assert "lease_expires_at" in migration_path.read_text(encoding="utf-8")
+    assert {"correlation_id", "traceparent"} <= set(AgentRunRow.__table__.columns.keys())

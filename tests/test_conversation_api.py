@@ -157,3 +157,35 @@ def test_run_events_are_available_as_sse_for_reconnect():
     assert "id: 3\nevent: completed" in response.text
     data_line = next(line[6:] for line in response.text.splitlines() if line.startswith("data: "))
     assert json.loads(data_line)["state"] == "running"
+
+
+def test_run_cancel_endpoint_does_not_rewrite_a_completed_run():
+    client, _, conversation_id = _client()
+    turn = client.post(
+        f"/v1/conversations/{conversation_id}/messages",
+        headers={"Idempotency-Key": "cancel-completed"},
+        json={"content": "hello"},
+    ).json()
+
+    response = client.delete(f"/v1/runs/{turn['run_id']}")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "completed"
+
+
+def test_run_cancel_endpoint_hides_runs_owned_by_another_user():
+    client, _, conversation_id = _client()
+    turn = client.post(
+        f"/v1/conversations/{conversation_id}/messages",
+        headers={"Idempotency-Key": "cancel-owner"},
+        json={"content": "hello"},
+    ).json()
+    secret = "test-access-token-secret"
+    other = TestClient(
+        client.app,
+        headers={"Authorization": f"Bearer {issue_access_token(secret, 'other-user')}"},
+    )
+
+    response = other.delete(f"/v1/runs/{turn['run_id']}")
+
+    assert response.status_code == 404

@@ -74,6 +74,9 @@ class InMemoryConversationRepository:
         idempotency_key: str,
         request_hash: str,
         content: str,
+        *,
+        correlation_id: str = "",
+        traceparent: str | None = None,
     ) -> tuple[AgentRun, bool]:
         now = datetime.now(timezone.utc)
         key = (user_id, conversation_id, idempotency_key)
@@ -100,6 +103,8 @@ class InMemoryConversationRepository:
                 message_id=message.id,
                 input_message=content,
                 state="pending",
+                correlation_id=correlation_id,
+                traceparent=traceparent,
                 created_at=now,
                 updated_at=now,
             )
@@ -198,6 +203,25 @@ class InMemoryConversationRepository:
                 self._runs[run_id] = run
                 self._append_run_event(run, "failed", {"state": "failed", "error": error}, now)
             return run
+
+    async def cancel_run(self, user_id: str, run_id: str) -> AgentRun | None:
+        async with self._lock:
+            run = self._runs.get(run_id)
+            if run is None or run.user_id != user_id:
+                return None
+            if run.state in {"completed", "failed", "cancelled", "expired"}:
+                return run
+            now = datetime.now(timezone.utc)
+            cancelled = replace(
+                run,
+                state="cancelled",
+                lease_owner=None,
+                lease_expires_at=None,
+                updated_at=now,
+            )
+            self._runs[run_id] = cancelled
+            self._append_run_event(cancelled, "cancelled", {"state": "cancelled"}, now)
+            return cancelled
 
     async def get_run(self, user_id: str, run_id: str) -> AgentRun | None:
         async with self._lock:

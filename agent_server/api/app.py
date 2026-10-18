@@ -6,6 +6,8 @@ import asyncio
 from dataclasses import dataclass
 import hashlib
 import json
+import re
+from typing import Callable
 from contextlib import asynccontextmanager
 
 from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Query, Response, status
@@ -18,6 +20,7 @@ from agent_core.runs import IdempotencyConflict, RunRepository, RunState
 from agent_server.auth_sessions import AuthSessionService
 from agent_server.run_worker import AgentRunWorker
 from .auth_routes import create_auth_router
+from agent_server.observability import CorrelationMetricsMiddleware, HttpMetrics, InMemoryRateLimiter
 from .security import require_authenticated_user
 
 
@@ -72,11 +75,19 @@ def create_app(
     runs: RunRepository,
     auth_service: AuthSessionService,
     run_worker: AgentRunWorker | None = None,
+    tool_executor=None,
+    tool_scopes_for_user: Callable[[str], frozenset[str]] = lambda _user_id: frozenset(),
+    rate_limiter: InMemoryRateLimiter | None = None,
+    metrics: HttpMetrics | None = None,
 ) -> FastAPI:
     """Create an API with auth and storage adapters supplied by deployment."""
 
     worker = run_worker or AgentRunWorker(
-        runtime=runtime, conversations=conversations, runs=runs
+        runtime=runtime,
+        conversations=conversations,
+        runs=runs,
+        tool_executor=tool_executor,
+        tool_scopes_for_user=tool_scopes_for_user,
     )
 
     @asynccontextmanager
@@ -90,13 +101,28 @@ def create_app(
             await worker_task
 
     app = FastAPI(title="DevOps Agent API", version="1", lifespan=lifespan)
+    request_metrics = metrics or HttpMetrics()
+    limiter = rate_limiter or InMemoryRateLimiter()
+    app.state.metrics = request_metrics
+    app.state.runs = runs
+    app.state.conversations = conversations
+    app.state.run_worker = worker
+    app.add_middleware(CorrelationMetricsMiddleware, metrics=request_metrics)
     app.include_router(create_auth_router(auth_service))
 
     def authenticate(
         authorization: str | None = Header(default=None),
     ) -> AuthenticatedPrincipal:
         user = require_authenticated_user(authorization, auth_service)
+        limiter.check(user.user_id)
         return AuthenticatedPrincipal(user_id=user.user_id)
+
+    @app.get("/metrics", include_in_schema=False)
+    async def prometheus_metrics() -> Response:
+        return Response(
+            content=request_metrics.render(),
+            media_type="text/plain; version=0.0.4; charset=utf-8",
+        )
 
     @app.get("/health/live", tags=["health"])
     async def live() -> dict[str, str]:
@@ -165,12 +191,22 @@ def create_app(
         background_tasks: BackgroundTasks,
         response: Response,
         idempotency_key: str = Header(alias="Idempotency-Key", min_length=1, max_length=255),
+        correlation_id: str | None = Header(default=None, alias="X-Correlation-ID"),
+        traceparent: str | None = Header(default=None),
         principal: AuthenticatedPrincipal = Depends(authenticate),
     ) -> TurnOutput:
         conversation = await conversations.get(principal.user_id, conversation_id)
         if conversation is None:
             raise HTTPException(status_code=404, detail="Conversation not found")
         request_hash = hashlib.sha256(body.content.encode("utf-8")).hexdigest()
+        if traceparent is not None and not re.fullmatch(
+            r"00-[0-9a-f]{32}-[0-9a-f]{16}-0[01]", traceparent
+        ):
+            raise HTTPException(status_code=400, detail="Invalid traceparent")
+        if correlation_id is not None and not re.fullmatch(
+            r"[A-Za-z0-9._:-]{1,128}", correlation_id
+        ):
+            raise HTTPException(status_code=400, detail="Invalid correlation ID")
         try:
             run, is_new = await runs.create_or_get_run(
                 principal.user_id,
@@ -178,6 +214,8 @@ def create_app(
                 idempotency_key,
                 request_hash,
                 body.content,
+                correlation_id=correlation_id or "",
+                traceparent=traceparent,
             )
         except IdempotencyConflict as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -202,6 +240,18 @@ def create_app(
         run = await runs.get_run(principal.user_id, run_id)
         if run is None:
             raise HTTPException(status_code=404, detail="Run not found")
+        return _run_output(run)
+
+    @app.delete("/v1/runs/{run_id}", response_model=RunOutput, tags=["runs"])
+    async def cancel_run(
+        run_id: str,
+        principal: AuthenticatedPrincipal = Depends(authenticate),
+    ) -> RunOutput:
+        run = await runs.cancel_run(principal.user_id, run_id)
+        if run is None:
+            raise HTTPException(status_code=404, detail="Run not found")
+        if run.state == "cancelled":
+            worker.cancel(run_id)
         return _run_output(run)
 
     @app.get("/v1/runs/{run_id}/events", response_model=list[RunEventOutput], tags=["runs"])

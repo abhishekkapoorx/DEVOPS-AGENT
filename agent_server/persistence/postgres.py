@@ -80,6 +80,8 @@ class AgentRunRow(Base):
     message: Mapped[str] = mapped_column(Text, default="")
     tool_calls: Mapped[list] = mapped_column(JSON, default=list)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    correlation_id: Mapped[str] = mapped_column(String(128), default="")
+    traceparent: Mapped[str | None] = mapped_column(String(128), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
@@ -204,6 +206,9 @@ class PostgresConversationRepository:
         idempotency_key: str,
         request_hash: str,
         content: str,
+        *,
+        correlation_id: str = "",
+        traceparent: str | None = None,
     ) -> tuple[AgentRun, bool]:
         now = datetime.now(timezone.utc)
         run_id = uuid4().hex
@@ -248,6 +253,8 @@ class PostgresConversationRepository:
                     message_id=message_id,
                     input_message=content,
                     state="pending",
+                    correlation_id=correlation_id,
+                    traceparent=traceparent,
                     attempt=0,
                     lease_owner=None,
                     lease_expires_at=None,
@@ -400,6 +407,32 @@ class PostgresConversationRepository:
                 await session.commit()
             return _run(row)
 
+    async def cancel_run(self, user_id: str, run_id: str) -> AgentRun | None:
+        async with self._sessions() as session:
+            row = await session.scalar(
+                select(AgentRunRow).where(
+                    AgentRunRow.id == run_id, AgentRunRow.user_id == user_id
+                ).with_for_update()
+            )
+            if row is None:
+                return None
+            if row.state not in {"completed", "failed", "cancelled", "expired"}:
+                now = datetime.now(timezone.utc)
+                row.state = "cancelled"
+                row.lease_owner = None
+                row.lease_expires_at = None
+                row.updated_at = now
+                session.add(
+                    RunEventRow(
+                        run_id=run_id,
+                        event_type="cancelled",
+                        data={"state": "cancelled"},
+                        created_at=now,
+                    )
+                )
+                await session.commit()
+            return _run(row)
+
     async def get_run(self, user_id: str, run_id: str) -> AgentRun | None:
         async with self._sessions() as session:
             row = await session.scalar(
@@ -429,7 +462,6 @@ class PostgresConversationRepository:
             RunEvent(row.sequence, row.run_id, row.event_type, row.data, row.created_at)
             for row in rows
         )
-
 
 async def _owned_run(session: AsyncSession, user_id: str, run_id: str) -> AgentRunRow:
     row = await session.scalar(
@@ -464,6 +496,8 @@ def _run(row: AgentRunRow) -> AgentRun:
         message=row.message,
         tool_calls=tuple(row.tool_calls or ()),
         error=row.error,
+        correlation_id=row.correlation_id or "",
+        traceparent=row.traceparent,
         created_at=row.created_at,
         updated_at=row.updated_at,
     )

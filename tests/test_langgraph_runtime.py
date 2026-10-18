@@ -54,3 +54,32 @@ async def test_runtime_rejects_malformed_persisted_history():
 
     with pytest.raises(ValueError, match="Unsupported conversation history role"):
         await runtime.run(request)
+
+
+@pytest.mark.asyncio
+async def test_runtime_preserves_tool_call_ids_and_reintroduces_structured_results():
+    from types import SimpleNamespace
+    from agent_server.server_agent import ToolRequest
+
+    class ToolCallingAgent:
+        async def arun(self, **kwargs):
+            self.kwargs = kwargs
+            return SimpleNamespace(
+                message="done",
+                requests=(ToolRequest(tool="git", action="status", arguments={}, call_id="call-42"),),
+            )
+
+    agent = ToolCallingAgent()
+    runtime = LangGraphRuntime(agent=agent)
+    request = AgentRequest(
+        user_id="user-1",
+        conversation_id="conversation-1",
+        run_id="run-1",
+        message="status",
+        tool_results=({"call_id": "call-previous", "status": "succeeded", "output": {"status": "clean"}},),
+    )
+
+    result = await runtime.run(request)
+
+    assert result.tool_calls[0].call_id == "call-42"
+    assert agent.kwargs["tool_results"][0]["call_id"] == "call-previous"

@@ -33,12 +33,16 @@ class LangGraphRuntime:
             session_id=_thread_id(request.user_id, request.conversation_id),
             message=request.message,
             history=tuple(_history_message(item) for item in request.history),
+            tool_results=request.tool_results,
             run_id=request.run_id,
+            correlation_id=request.correlation_id,
+            traceparent=request.traceparent,
         )
         calls = tuple(
             AgentToolCall(
-                call_id=str(uuid4()),
+                call_id=tool_request.call_id or str(uuid4()),
                 name=f"{tool_request.tool}.{tool_request.action}",
+                version="1.0.0",
                 arguments=tool_request.arguments,
             )
             for tool_request in response.requests

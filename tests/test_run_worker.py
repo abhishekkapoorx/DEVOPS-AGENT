@@ -1,6 +1,8 @@
+import asyncio
 import pytest
 
-from agent_core import AgentResponse
+from agent_core import AgentResponse, AgentToolCall
+from agent_core.tools import ToolResult
 from agent_server.persistence.memory import InMemoryConversationRepository
 from agent_server.run_worker import AgentRunWorker
 
@@ -64,3 +66,116 @@ async def test_worker_uses_only_history_before_the_message_being_processed():
 
     assert [item["content"] for item in runtime.history] == ["earlier"]
     assert run.input_message == "current"
+
+
+@pytest.mark.asyncio
+async def test_worker_executes_registered_tool_and_returns_result_to_runtime():
+    repository = InMemoryConversationRepository()
+    conversation = await repository.create("user-1", "test")
+    run, _ = await repository.create_or_get_run(
+        "user-1", conversation.id, "key-1", "hash-1", "check git"
+    )
+
+    class Runtime:
+        requests = []
+
+        async def run(self, request):
+            self.requests.append(request)
+            if not request.tool_results:
+                return AgentResponse(
+                    message="",
+                    tool_calls=(
+                        AgentToolCall(
+                            call_id="call-1",
+                            name="git.status",
+                            version="1.0.0",
+                            arguments={"repository_id": "repo-1"},
+                        ),
+                    ),
+                )
+            assert request.tool_results[0]["output"] == {"status": "clean"}
+            return AgentResponse(message="The working tree is clean.")
+
+    class Tools:
+        contexts = []
+
+        async def execute(self, *, name, version, arguments, context):
+            self.contexts.append(context)
+            assert name == "git.status"
+            assert version == "1.0.0"
+            assert arguments["repository_id"] == "repo-1"
+            return ToolResult(
+                call_id=context.call_id,
+                name=name,
+                status="succeeded",
+                output={"status": "clean"},
+            )
+
+    runtime, tools = Runtime(), Tools()
+    worker = AgentRunWorker(
+        runtime=runtime,
+        conversations=repository,
+        runs=repository,
+        tool_executor=tools,
+        tool_scopes_for_user=lambda user_id: frozenset({"git:read"}) if user_id == "user-1" else frozenset(),
+    )
+    await worker.run_once()
+
+    restored = await repository.get_run("user-1", run.id)
+    assert restored is not None and restored.state == "completed"
+    assert restored.message == "The working tree is clean."
+    assert restored.tool_calls[0]["result"]["status"] == "succeeded"
+    assert len(runtime.requests) == 2
+    assert tools.contexts[0].idempotency_key == f"{run.id}:call-1"
+    assert tools.contexts[0].scopes == frozenset({"git:read"})
+
+
+@pytest.mark.asyncio
+async def test_cancelling_a_run_is_owner_scoped_and_replayed_as_an_event():
+    repository = InMemoryConversationRepository()
+    conversation = await repository.create("user-1", "test")
+    run, _ = await repository.create_or_get_run(
+        "user-1",
+        conversation.id,
+        "key-1",
+        "hash-1",
+        "hello",
+        correlation_id="corr-1",
+        traceparent="00-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbbb-01",
+    )
+
+    assert await repository.cancel_run("other-user", run.id) is None
+    cancelled = await repository.cancel_run("user-1", run.id)
+    assert cancelled is not None and cancelled.state == "cancelled"
+    assert cancelled.correlation_id == "corr-1"
+    assert cancelled.traceparent == "00-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbbb-01"
+    events = await repository.list_run_events("user-1", run.id)
+    assert events[-1].event_type == "cancelled"
+
+
+@pytest.mark.asyncio
+async def test_worker_cancellation_stops_the_active_runtime_task():
+    repository = InMemoryConversationRepository()
+    conversation = await repository.create("user-1", "test")
+    run, _ = await repository.create_or_get_run(
+        "user-1", conversation.id, "key-1", "hash-1", "long task"
+    )
+
+    class BlockingRuntime:
+        started = asyncio.Event()
+
+        async def run(self, request):
+            self.started.set()
+            await asyncio.Event().wait()
+
+    runtime = BlockingRuntime()
+    worker = AgentRunWorker(runtime=runtime, conversations=repository, runs=repository)
+    task = asyncio.create_task(worker.run_once())
+    await runtime.started.wait()
+    await repository.cancel_run("user-1", run.id)
+
+    assert worker.cancel(run.id)
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    cancelled = await repository.get_run("user-1", run.id)
+    assert cancelled is not None and cancelled.state == "cancelled"

@@ -31,6 +31,7 @@ class ToolRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     tool: str = Field(min_length=1, pattern=r"^[a-z][a-z0-9_]*$")
     action: str = Field(min_length=1, pattern=r"^[a-z][a-z0-9_]*$")
+    call_id: str | None = Field(default=None, min_length=1, exclude=True)
     arguments: dict[str, Any] = Field(default_factory=dict)
 
     def model_post_init(self, __context: Any) -> None:
@@ -115,7 +116,10 @@ class ServerAgent:
         session_id: str,
         message: str,
         history: Sequence[BaseMessage] | None = None,
+        tool_results: Sequence[Mapping[str, Any]] = (),
         run_id: str | None = None,
+        correlation_id: str = "",
+        traceparent: str | None = None,
     ) -> "AgentResponse":
         """Process one message without executing any requested operation."""
 
@@ -124,12 +128,27 @@ class ServerAgent:
             raise ValueError("message must not be empty")
         messages = list(history or ())
         messages.append(HumanMessage(content=message))
+        for result in tool_results:
+            call_id = result.get("call_id")
+            if not isinstance(call_id, str) or not call_id:
+                raise ValueError("Tool results require a call_id")
+            messages.append(
+                ToolMessage(content=json.dumps(dict(result), separators=(",", ":")), tool_call_id=call_id)
+            )
         result = await self._get_graph().ainvoke(
             {"messages": messages},
             context=context.model_dump(),
             config={
                 "configurable": {"thread_id": session_id},
-                "metadata": {"run_id": run_id} if run_id else {},
+                "metadata": {
+                    key: value
+                    for key, value in {
+                        "run_id": run_id,
+                        "correlation_id": correlation_id,
+                        "traceparent": traceparent,
+                    }.items()
+                    if value
+                },
                 "run_name": "devops_agent_turn",
             },
         )
@@ -153,7 +172,8 @@ class AgentResponse:
                 continue
             try:
                 payload = json.loads(item.content) if isinstance(item.content, str) else item.content
-                requests.append(ToolRequest.model_validate(payload))
+                request = ToolRequest.model_validate(payload)
+                requests.append(request.model_copy(update={"call_id": item.tool_call_id}))
             except (TypeError, ValueError, ValidationError):
                 continue
 

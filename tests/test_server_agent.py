@@ -44,7 +44,9 @@ def test_agent_response_discards_malformed_tool_messages():
     )
 
     assert response.message == "Planning complete"
-    assert response.requests == (ToolRequest(tool="docker", action="build", arguments={}),)
+    assert response.requests == (
+        ToolRequest(tool="docker", action="build", arguments={}, call_id="1"),
+    )
 
 
 def test_unknown_tool_actions_fail_closed():
