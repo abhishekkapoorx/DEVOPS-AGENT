@@ -26,6 +26,7 @@ class AgentRequest:
     message: str
     history: Sequence[Mapping[str, Any]] = ()
     tool_results: Sequence[Mapping[str, Any]] = ()
+    available_tools: Sequence[Mapping[str, Any]] = ()
     correlation_id: str = ""
     traceparent: str | None = None
 

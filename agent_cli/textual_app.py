@@ -36,6 +36,7 @@ class TextualAgentApp(App[None]):
     #composer Button { width: 12; min-width: 12; }
     #cancel-run { width: 12; min-width: 12; }
     #status { height: auto; min-height: 2; }
+    #identity { height: auto; min-height: 2; color: $text-muted; }
     """
 
     def __init__(
@@ -58,6 +59,7 @@ class TextualAgentApp(App[None]):
         yield Static("Checking saved sign-in…", id="status")
         with Horizontal(id="layout"):
             with Vertical(id="sidebar"):
+                yield Static("Signed out", id="identity")
                 yield Button("Sign in", id="sign-in", variant="primary")
                 yield Button("Create account", id="sign-up")
                 yield Button("New conversation", id="new-conversation")
@@ -140,6 +142,7 @@ class TextualAgentApp(App[None]):
             await asyncio.to_thread(self.auth.logout)
         finally:
             self.client = None
+            self.query_one("#identity", Static).update("Signed out")
             if self.selection_store:
                 await asyncio.to_thread(self.selection_store.clear)
             self.conversations.clear()
@@ -235,6 +238,7 @@ class TextualAgentApp(App[None]):
 
     def _activate(self, tokens: TokenResponse) -> None:
         self.client = self.client_factory(tokens)
+        self.query_one("#identity", Static).update(f"Signed in as {tokens.user_id}")
         self.query_one("#status", Static).update(f"Signed in as {tokens.user_id}.")
 
     def _show_verification(self, url: str, code: str) -> None:

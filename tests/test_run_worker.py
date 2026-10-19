@@ -99,6 +99,18 @@ async def test_worker_executes_registered_tool_and_returns_result_to_runtime():
     class Tools:
         contexts = []
 
+        async def list_tools(self, *, context):
+            assert context.user_id == "user-1"
+            assert context.scopes == frozenset({"git:read"})
+            return (
+                {
+                    "name": "git.status",
+                    "version": "1.0.0",
+                    "description": "Read git status.",
+                    "input_schema": {"type": "object"},
+                },
+            )
+
         async def execute(self, *, name, version, arguments, context):
             self.contexts.append(context)
             assert name == "git.status"
@@ -126,6 +138,7 @@ async def test_worker_executes_registered_tool_and_returns_result_to_runtime():
     assert restored.message == "The working tree is clean."
     assert restored.tool_calls[0]["result"]["status"] == "succeeded"
     assert len(runtime.requests) == 2
+    assert runtime.requests[0].available_tools[0]["name"] == "git.status"
     assert tools.contexts[0].idempotency_key == f"{run.id}:call-1"
     assert tools.contexts[0].scopes == frozenset({"git:read"})
 

@@ -1,8 +1,9 @@
-"""Explicitly local-only browser approval provider for development.
+"""In-process browser approval provider for local and development modes.
 
 This is deliberately not an identity provider.  It exists so a developer can
-exercise the device flow without a separate account web site.  Deployment
-composition only enables it when ``DEVOPS_AGENT_AUTH_MODE=development``.
+exercise the device flow without a separate account web site. Local account
+credentials are checked separately by the PostgreSQL-backed account service;
+this class only holds short-lived device approvals in process memory.
 """
 
 from __future__ import annotations
@@ -21,11 +22,17 @@ class PendingApproval:
     expires_at: datetime
 
 
-class DevelopmentApprovalProvider:
-    """In-process approval store exposed only by the development API route."""
+class InProcessDeviceApprovalProvider:
+    """In-process approval store for the mock development identity mode."""
 
-    def __init__(self, verification_base_url: str) -> None:
+    def __init__(
+        self,
+        verification_base_url: str,
+        *,
+        verification_path: str = "/v1/development/device",
+    ) -> None:
         self._base_url = verification_base_url.rstrip("/")
+        self._verification_path = "/" + verification_path.strip("/")
         self._pending: dict[str, PendingApproval] = {}
         self._decisions: dict[str, DeviceApproval] = {}
 
@@ -36,7 +43,7 @@ class DevelopmentApprovalProvider:
         self._pending[approval_id] = PendingApproval(user_code, mode, expires_at)
         return DevicePresentation(
             approval_id=approval_id,
-            verification_url=f"{self._base_url}/v1/development/device/{approval_id}",
+            verification_url=f"{self._base_url}{self._verification_path}/{approval_id}",
         )
 
     async def get_device_approval(self, approval_id: str) -> DeviceApproval | None:
@@ -56,4 +63,7 @@ class DevelopmentApprovalProvider:
         return True
 
 
-__all__ = ["DevelopmentApprovalProvider"]
+# Compatibility name retained for existing development-mode integrations.
+DevelopmentApprovalProvider = InProcessDeviceApprovalProvider
+
+__all__ = ["DevelopmentApprovalProvider", "InProcessDeviceApprovalProvider"]

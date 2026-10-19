@@ -98,11 +98,16 @@ def test_local_api_to_separate_tool_service_round_trip_and_reconnect():
     )
     tool_http = TestClient(tool_app)
     def tool_opener(request, timeout):
-        response = tool_http.post(
-            "/v1/tool-calls",
-            headers=dict(request.header_items()),
-            content=request.data,
-        )
+        if request.method == "GET":
+            response = tool_http.get(
+                "/v1/tools", headers=dict(request.header_items())
+            )
+        else:
+            response = tool_http.post(
+                "/v1/tool-calls",
+                headers=dict(request.header_items()),
+                content=request.data,
+            )
         if response.status_code >= 400:
             from urllib.error import HTTPError
             raise HTTPError(request.full_url, response.status_code, "Tool Service error", response.headers, None)
@@ -190,6 +195,17 @@ def test_settings_supports_repeatable_echo_smoke_configuration(monkeypatch):
 
     assert settings.runtime == "echo"
     assert settings.repositories == {"workspace": workspace}
+
+
+def test_local_auth_requires_https_outside_loopback(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "postgresql://devops:devops@localhost/devops")
+    monkeypatch.setenv("DEVOPS_AGENT_ACCESS_TOKEN_SECRET", "x" * 32)
+    monkeypatch.setenv("DEVOPS_AGENT_PUBLIC_BASE_URL", "http://agent.example.com")
+    monkeypatch.setenv("DEVOPS_AGENT_AUTH_MODE", "local")
+    monkeypatch.setenv("DEVOPS_AGENT_RUNTIME", "echo")
+
+    with pytest.raises(RuntimeError, match="requires HTTPS"):
+        Settings.from_environment()
 
 
 def test_api_settings_do_not_require_tool_repository_mount(monkeypatch):

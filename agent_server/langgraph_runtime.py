@@ -48,12 +48,13 @@ class LangGraphRuntime:
             run_id=request.run_id,
             correlation_id=request.correlation_id,
             traceparent=request.traceparent,
+            available_tools=request.available_tools,
         )
         calls = tuple(
             AgentToolCall(
                 call_id=tool_request.call_id or str(uuid4()),
                 name=f"{tool_request.tool}.{tool_request.action}",
-                version="1.0.0",
+                version=tool_request.version,
                 arguments=tool_request.arguments,
             )
             for tool_request in response.requests

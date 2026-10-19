@@ -130,3 +130,28 @@ async def test_runtime_reconstructs_history_when_no_checkpoint_exists():
         )
     )
     assert [item.content for item in agent.kwargs["history"]] == ["earlier"]
+
+
+@pytest.mark.asyncio
+async def test_runtime_passes_authorized_tool_catalog_to_the_server_agent():
+    agent = FakeAgent()
+    available_tools = (
+        {
+            "name": "git.status",
+            "version": "1.0.0",
+            "description": "Read git status.",
+            "input_schema": {"type": "object"},
+        },
+    )
+
+    await LangGraphRuntime(agent=agent).run(
+        AgentRequest(
+            user_id="user-1",
+            conversation_id="conversation-1",
+            run_id="run-1",
+            message="current git status",
+            available_tools=available_tools,
+        )
+    )
+
+    assert agent.kwargs["available_tools"] == available_tools

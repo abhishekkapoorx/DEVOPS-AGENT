@@ -11,7 +11,7 @@ from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from agent_server.persistence.postgres import Base
-from agent_server.persistence.auth import AuthSessionRow, DeviceAuthorizationRow  # noqa: F401
+from agent_server.persistence.auth import AuthSessionRow, DeviceAuthorizationRow, LocalAccountRow  # noqa: F401
 from agent_server.persistence.tool_audit import ToolExecutionRow  # noqa: F401
 
 config = context.config

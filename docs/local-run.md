@@ -1,8 +1,9 @@
 # Local end-to-end run
 
-This repository includes a deliberately scoped development identity page. It
-is for a disposable local stack only; production must supply a real website
-approval provider before it can start.
+This repository includes a self-hosted email/password account flow backed by
+PostgreSQL. It is intended for local/self-hosted deployments. It does not send
+verification email or provide password recovery; expose it publicly only over
+HTTPS and plan a recovery/verification policy for production use.
 
 1. Copy `.env.example` to `.env` and replace the access-token secret
    with a random value of at least 32 characters. The explicit env-file name
@@ -10,9 +11,11 @@ approval provider before it can start.
 2. Start the complete stack with `docker compose --env-file .env up --build`. The `migrate`
    service applies Alembic migrations before the API and Tool Service start.
 3. In another shell install the CLI (`python -m pip install -e ".[cli]"`) and
-   run `devops-agent --auth --api-url http://127.0.0.1:8000`. Open the printed
-   page, enter the displayed eight-character code, and approve. The CLI then
-   stores its rotated refresh credential locally.
+   run `devops-agent --auth --api-url http://127.0.0.1:8000`. Choose Create
+   account on first use and enter an email plus a password of at least 12
+   characters in the browser page. Later choose Sign in. The CLI displays the
+   signed-in email and stores its rotated refresh credential locally. The
+   email is the account identity; no email is sent or verified.
 4. Run `devops-agent --ask "git status workspace" --api-url http://127.0.0.1:8000`.
    With the supplied `echo` runtime this requests `git.status` from the
    separate Tool Service, persists the result, resumes the agent turn, and

@@ -79,3 +79,36 @@ def test_tool_client_requires_explicit_permission_for_non_loopback_http():
     )
 
     assert client.base_url == "http://tool-service:8001"
+
+
+def test_rest_tool_service_client_lists_tools_for_the_run_user():
+    requests = []
+
+    def opener(request, *, timeout):
+        requests.append(request)
+        return Response(
+            json.dumps(
+                [
+                    {
+                        "name": "git.status",
+                        "version": "1.0.0",
+                        "description": "Read status for an allowed repository.",
+                        "input_schema": {"type": "object", "properties": {}},
+                    }
+                ]
+            ).encode()
+        )
+
+    client = RestToolServiceClient(
+        "https://tools.example", access_token=lambda context: context.user_id, opener=opener
+    )
+    context = ToolExecutionContext(
+        user_id="user-1", run_id="run-1", call_id="tool-catalog", scopes=frozenset({"git:read"})
+    )
+
+    tools = asyncio.run(client.list_tools(context=context))
+
+    assert tools[0]["name"] == "git.status"
+    assert requests[0].method == "GET"
+    assert requests[0].full_url == "https://tools.example/v1/tools"
+    assert requests[0].get_header("Authorization") == "Bearer user-1"

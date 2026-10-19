@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime
+from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, String, select, update
+from sqlalchemy import DateTime, String, Text, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import Mapped, mapped_column
 
+from agent_server.accounts import AccountAlreadyExists, LocalAccount
 from agent_server.auth_sessions import AuthSession, DeviceAuthorization, DeviceMode, DeviceStatus
 from .postgres import Base
 
@@ -27,6 +29,8 @@ class DeviceAuthorizationRow(AuthBase):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     next_poll_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    approval_status: Mapped[str | None] = mapped_column(String(16))
+    approved_user_id: Mapped[str | None] = mapped_column(String(255))
 
 
 class AuthSessionRow(AuthBase):
@@ -42,11 +46,38 @@ class AuthSessionRow(AuthBase):
     replaced_by: Mapped[str | None] = mapped_column(String(32))
 
 
+class LocalAccountRow(AuthBase):
+    __tablename__ = "auth_accounts"
+
+    email: Mapped[str] = mapped_column(String(320), primary_key=True)
+    password_hash: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class PostgresAuthRepository:
     """Repository that stores only hashed bearer codes and refresh tokens."""
 
     def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
         self._sessions = sessions
+
+    async def create_local_account(self, email: str, password_hash: str) -> LocalAccount:
+        row = LocalAccountRow(
+            email=email,
+            password_hash=password_hash,
+            created_at=datetime.now(timezone.utc),
+        )
+        try:
+            async with self._sessions() as session:
+                session.add(row)
+                await session.commit()
+        except IntegrityError as error:
+            raise AccountAlreadyExists("An account with this email already exists") from error
+        return LocalAccount(email=row.email, password_hash=row.password_hash)
+
+    async def get_local_account(self, email: str) -> LocalAccount | None:
+        async with self._sessions() as session:
+            row = await session.get(LocalAccountRow, email)
+        return LocalAccount(email=row.email, password_hash=row.password_hash) if row else None
 
     async def create_device(self, device: DeviceAuthorization) -> None:
         async with self._sessions() as session:
@@ -57,6 +88,46 @@ class PostgresAuthRepository:
         async with self._sessions() as session:
             row = await session.get(DeviceAuthorizationRow, _hash(device_code))
         return _device(row, device_code) if row else None
+
+    async def get_device_approval_request(self, approval_id: str):
+        async with self._sessions() as session:
+            return await session.scalar(
+                select(DeviceAuthorizationRow).where(
+                    DeviceAuthorizationRow.approval_id == approval_id
+                )
+            )
+
+    async def get_device_approval(self, approval_id: str):
+        from agent_server.auth_sessions import DeviceApproval
+
+        row = await self.get_device_approval_request(approval_id)
+        if row is None or row.approval_status is None:
+            return None
+        return DeviceApproval(
+            status=DeviceStatus(row.approval_status), user_id=row.approved_user_id
+        )
+
+    async def decide_device_approval(
+        self, approval_id: str, user_code: str, user_id: str | None, approved: bool
+    ) -> bool:
+        now = datetime.now(timezone.utc)
+        async with self._sessions() as session:
+            result = await session.execute(
+                update(DeviceAuthorizationRow)
+                .where(
+                    DeviceAuthorizationRow.approval_id == approval_id,
+                    DeviceAuthorizationRow.user_code == user_code,
+                    DeviceAuthorizationRow.status == DeviceStatus.PENDING.value,
+                    DeviceAuthorizationRow.expires_at > now,
+                    DeviceAuthorizationRow.approval_status.is_(None),
+                )
+                .values(
+                    approval_status=(DeviceStatus.APPROVED if approved else DeviceStatus.DENIED).value,
+                    approved_user_id=user_id if approved else None,
+                )
+            )
+            await session.commit()
+        return result.rowcount == 1
 
     async def update_device(self, device: DeviceAuthorization) -> None:
         async with self._sessions() as session:
@@ -148,6 +219,8 @@ def _device_row(value: DeviceAuthorization) -> DeviceAuthorizationRow:
         expires_at=value.expires_at,
         next_poll_at=value.next_poll_at,
         consumed_at=value.consumed_at,
+        approval_status=None,
+        approved_user_id=None,
     )
 
 
@@ -175,4 +248,4 @@ def _auth_session(row: AuthSessionRow) -> AuthSession:
     )
 
 
-__all__ = ["AuthBase", "AuthSessionRow", "DeviceAuthorizationRow", "PostgresAuthRepository"]
+__all__ = ["AuthBase", "AuthSessionRow", "DeviceAuthorizationRow", "LocalAccountRow", "PostgresAuthRepository"]

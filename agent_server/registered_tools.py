@@ -64,7 +64,12 @@ def build_default_registry(
         ToolDefinition(
             name="git.status",
             version="1.0.0",
-            description="Read the current branch and working-tree status of an allowed repository.",
+            description=(
+                "Read the current branch and working-tree status of an allowed repository. "
+                "Allowed repository_id values: "
+                + (", ".join(sorted(repositories)) if repositories else "none configured")
+                + "."
+            ),
             input_model=GitStatusInput,
             output_model=GitStatusOutput,
             required_scopes=frozenset({"git:read"}),

@@ -2,22 +2,22 @@
 
 from .server_agent import (
     AgentResponse,
-    REQUEST_TOOLS,
     SERVER_AGENT_PROMPT,
     ServerAgent,
     SessionContext,
     ToolRequest,
+    registered_request_tools,
     run_agent,
 )
 from .transport import app, create_app
 
 __all__ = [
     "AgentResponse",
-    "REQUEST_TOOLS",
     "SERVER_AGENT_PROMPT",
     "ServerAgent",
     "SessionContext",
     "ToolRequest",
+    "registered_request_tools",
     "app",
     "create_app",
     "run_agent",

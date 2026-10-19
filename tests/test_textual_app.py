@@ -84,8 +84,10 @@ async def test_textual_app_restores_saved_session_and_loads_conversation_history
     async with app.run_test() as pilot:
         await pilot.pause()
         assert app.client is client
+        assert str(app.query_one("#identity").render()) == "Signed in as user-1"
         assert app.conversations[0]["id"] == "conversation-1"
         await pilot.click("#sign-out")
         await pilot.pause()
+        assert str(app.query_one("#identity").render()) == "Signed out"
 
     assert app.auth.logged_out

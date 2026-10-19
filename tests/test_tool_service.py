@@ -32,6 +32,15 @@ def definition(**changes):
     return ToolDefinition(**values)
 
 
+def test_git_status_tool_description_lists_only_repository_identifiers():
+    registry = build_default_registry({"workspace": Path("/workspace"), "docs": Path("/docs")})
+
+    description = registry.list_tools()[0].description
+
+    assert "Allowed repository_id values: docs, workspace." in description
+    assert "/workspace" not in description and "/docs" not in description
+
+
 @pytest.mark.asyncio
 async def test_tool_service_validates_and_executes_a_registered_factory():
     registry = ToolRegistry()

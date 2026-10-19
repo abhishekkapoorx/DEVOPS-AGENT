@@ -112,6 +112,19 @@ class AgentRunWorker:
             persisted_history = tuple(
                 {"role": item.role, "content": item.content} for item in history
             )
+            available_tools = ()
+            list_tools = getattr(self.tool_executor, "list_tools", None)
+            if list_tools is not None:
+                scopes = self.tool_scopes_for_user(run.user_id)
+                catalog_context = ToolExecutionContext(
+                    user_id=run.user_id,
+                    run_id=run.id,
+                    call_id="tool-catalog",
+                    scopes=scopes,
+                    correlation_id=run.correlation_id or run.id,
+                    traceparent=run.traceparent,
+                )
+                available_tools = await list_tools(context=catalog_context)
             tool_results: list[dict[str, Any]] = []
             tool_calls: list[dict[str, Any]] = []
             for _round in range(self.max_tool_rounds):
@@ -123,6 +136,7 @@ class AgentRunWorker:
                         message=run.input_message,
                         history=persisted_history,
                         tool_results=tuple(tool_results),
+                        available_tools=available_tools,
                         correlation_id=run.correlation_id,
                         traceparent=run.traceparent,
                     )

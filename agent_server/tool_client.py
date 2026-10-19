@@ -40,6 +40,39 @@ class RestToolServiceClient:
         self.timeout = timeout
         self.opener = opener
 
+    async def list_tools(self, *, context: ToolExecutionContext) -> tuple[dict[str, Any], ...]:
+        """Return only tools the Tool Service authorizes for this user's scopes."""
+
+        return await asyncio.to_thread(self._list_tools, context=context)
+
+    def _list_tools(self, *, context: ToolExecutionContext) -> tuple[dict[str, Any], ...]:
+        request = urllib.request.Request(
+            f"{self.base_url}/v1/tools",
+            headers={
+                "Authorization": f"Bearer {self.access_token(context)}",
+                "Accept": "application/json",
+            },
+            method="GET",
+        )
+        try:
+            with self.opener(request, timeout=self.timeout) as response:
+                body = json.loads(response.read(128_000))
+        except urllib.error.HTTPError as error:
+            raise ToolServiceError(f"Tool Service returned HTTP {error.code}") from error
+        except (urllib.error.URLError, TimeoutError, OSError) as error:
+            raise ToolServiceError("Tool Service request failed") from error
+        if not isinstance(body, list):
+            raise ToolServiceError("Tool Service returned an invalid tool catalog")
+        tools = []
+        for item in body:
+            if not isinstance(item, dict) or not all(
+                isinstance(item.get(field), str) and item[field]
+                for field in ("name", "version", "description")
+            ) or not isinstance(item.get("input_schema"), dict):
+                raise ToolServiceError("Tool Service returned an invalid tool catalog")
+            tools.append(item)
+        return tuple(tools)
+
     async def execute(
         self, *, name: str, version: str, arguments: dict[str, Any], context: ToolExecutionContext
     ) -> ToolResult:

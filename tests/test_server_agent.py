@@ -4,7 +4,12 @@ import pytest
 from langchain_core.messages import AIMessage, ToolMessage
 from pydantic import ValidationError
 
-from agent_server.server_agent import AgentResponse, REQUEST_TOOLS, SessionContext, ToolRequest
+from agent_server.server_agent import (
+    AgentResponse,
+    SessionContext,
+    ToolRequest,
+    registered_request_tools,
+)
 
 
 def test_tool_request_is_strictly_validated():
@@ -13,21 +18,38 @@ def test_tool_request_is_strictly_validated():
     assert request.model_dump() == {
         "tool": "cloud",
         "action": "provision",
+        "version": "1.0.0",
         "arguments": {"provider": "aws"},
     }
     with pytest.raises(ValidationError):
         ToolRequest(tool="cloud", action="Run shell", arguments={})
 
 
-def test_request_tool_returns_intent_without_executing_it():
-    result = REQUEST_TOOLS[0].invoke(
-        {"action": "provision", "arguments": {"provider": "aws", "resource": "s3"}}
+def test_registered_tools_expose_only_authorized_catalog_entries_to_the_model():
+    tools = registered_request_tools(
+        (
+            {
+                "name": "git.status",
+                "version": "2.0.0",
+                "description": "Read git status for an allowed repository.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {"repository_id": {"type": "string"}},
+                    "required": ["repository_id"],
+                },
+            },
+            {"name": "unreviewed.execute", "version": "1", "description": "unreviewed"},
+            {"name": "invalid name", "version": "1", "description": "invalid"},
+        )
     )
 
-    assert json.loads(result) == {
-        "tool": "cloud",
-        "action": "provision",
-        "arguments": {"provider": "aws", "resource": "s3"},
+    assert len(tools) == 1
+    request = json.loads(tools[0].invoke({"arguments": {"repository_id": "workspace"}}))
+    assert request == {
+        "tool": "git",
+        "action": "status",
+        "version": "2.0.0",
+        "arguments": {"repository_id": "workspace"},
     }
 
 
