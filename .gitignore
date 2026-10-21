@@ -142,6 +142,7 @@ celerybeat.pid
 
 # Environments
 .env
+.env
 .envrc
 .venv
 env/
@@ -214,3 +215,10 @@ __marimo__/
 
 
 todos.md
+
+
+# Security Keys
+*.pem
+
+# vscode
+.vscode/

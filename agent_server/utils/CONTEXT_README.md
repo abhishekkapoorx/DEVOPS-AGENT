@@ -11,7 +11,7 @@ Following LangChain's context pattern, **context** contains immutable configurat
 ### Setting Working Directory Context
 
 ```python
-from agent import supervisor
+from agent_server.app import supervisor
 from agent_server.utils.context import set_working_directory_context
 
 # Set the working directory before invoking

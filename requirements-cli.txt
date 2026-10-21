@@ -1,4 +1,6 @@
 # Dependencies for the independently shipped local CLI.
+keyring>=25,<27
 pydantic>=2.11,<3
+textual>=8.2,<9
 websockets>=15,<16
 

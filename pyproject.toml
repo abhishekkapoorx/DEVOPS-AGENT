@@ -11,20 +11,39 @@ dependencies = []
 
 [project.optional-dependencies]
 cli = [
+    "keyring>=25,<27",
     "pydantic>=2.11,<3",
+    "textual>=8.2,<9",
     "websockets>=15,<16",
 ]
 server = [
+    "alembic>=1.16,<2",
+    "argon2-cffi>=23.1,<26",
+    "asyncpg>=0.30,<1",
     "fastapi>=0.119,<1",
     "langchain>=1,<2",
     "langchain-core>=1,<2",
+    "langchain-google-genai>=3,<4",
+    "langchain-groq>=1,<2",
+    "langchain-ollama>=1,<2",
+    "langchain-openai>=1,<2",
+    "langgraph-checkpoint-postgres>=3,<4",
+    "psycopg[binary]>=3.2,<4",
     "pydantic>=2.11,<3",
+    "python-multipart>=0.0.20,<1",
+    "sqlalchemy[asyncio]>=2.0,<3",
     "uvicorn>=0.35,<1",
+]
+test = [
+    "pytest>=8,<10",
+    "pytest-asyncio>=0.24,<2",
 ]
 
 [project.scripts]
 devops-agent = "agent_cli.__main__:main"
+devops-agent-api = "agent_server.api_main:main"
+devops-agent-tools = "agent_server.tool_main:main"
 
 [tool.setuptools.packages.find]
-include = ["agent_protocol*", "agent_cli*", "agent_server*"]
+include = ["agent_core*", "agent_protocol*", "agent_cli*", "agent_server*"]
 
