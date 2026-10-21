@@ -215,3 +215,10 @@ __marimo__/
 
 
 todos.md
+
+
+# Security Keys
+*.pem
+
+# vscode
+.vscode/
