@@ -34,6 +34,10 @@ server = [
     "sqlalchemy[asyncio]>=2.0,<3",
     "uvicorn>=0.35,<1",
 ]
+test = [
+    "pytest>=8,<10",
+    "pytest-asyncio>=0.24,<2",
+]
 
 [project.scripts]
 devops-agent = "agent_cli.__main__:main"

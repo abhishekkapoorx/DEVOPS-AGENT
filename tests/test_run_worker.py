@@ -144,6 +144,60 @@ async def test_worker_executes_registered_tool_and_returns_result_to_runtime():
 
 
 @pytest.mark.asyncio
+async def test_worker_persists_streaming_model_and_redacted_tool_events():
+    repository = InMemoryConversationRepository()
+    conversation = await repository.create("user-1", "streaming")
+    run, _ = await repository.create_or_get_run(
+        "user-1", conversation.id, "stream-key", "stream-hash", "inspect"
+    )
+
+    class StreamingRuntime:
+        async def run(self, request):
+            raise AssertionError("stream-capable runtime should use run_stream")
+
+        async def run_stream(self, request, *, on_event):
+            await on_event({"type": "agent_delta", "text": "Checking **status**"})
+            if not request.tool_results:
+                return AgentResponse(
+                    message="",
+                    tool_calls=(
+                        AgentToolCall(
+                            call_id="stream-call",
+                            name="git.status",
+                            arguments={"repository_id": "workspace", "api_key": "secret-value"},
+                        ),
+                    ),
+                )
+            return AgentResponse(message="The repository is clean.")
+
+    class Tools:
+        async def execute(self, *, name, version, arguments, context):
+            return ToolResult(
+                call_id=context.call_id,
+                name=name,
+                status="succeeded",
+                output={"branch": "main", "token": "never-show-this"},
+            )
+
+    worker = AgentRunWorker(
+        runtime=StreamingRuntime(), conversations=repository, runs=repository,
+        tool_executor=Tools(),
+    )
+    await worker.run_once()
+
+    events = await repository.list_run_events("user-1", run.id)
+    event_types = [event.event_type for event in events]
+    assert event_types == [
+        "created", "running", "agent_delta", "tool_call_started",
+        "tool_call_completed", "agent_delta", "completed",
+    ]
+    stream = str([dict(event.data) for event in events])
+    assert "secret-value" not in stream
+    assert "never-show-this" not in stream
+    assert "[REDACTED]" in stream
+
+
+@pytest.mark.asyncio
 async def test_cancelling_a_run_is_owner_scoped_and_replayed_as_an_event():
     repository = InMemoryConversationRepository()
     conversation = await repository.create("user-1", "test")

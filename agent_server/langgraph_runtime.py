@@ -28,6 +28,15 @@ class LangGraphRuntime:
     async def run(self, request: AgentRequest) -> AgentResponse:
         """Run a turn and translate LangGraph output to domain contracts."""
 
+        return await self._run(request, on_event=None)
+
+    async def run_stream(self, request: AgentRequest, *, on_event) -> AgentResponse:
+        """Stream user-visible model text while retaining the final structured response."""
+
+        return await self._run(request, on_event=on_event)
+
+    async def _run(self, request: AgentRequest, *, on_event) -> AgentResponse:
+
         thread_id = _thread_id(request.user_id, request.conversation_id)
         history = tuple(_history_message(item) for item in request.history)
         checkpointer = getattr(self._agent, "checkpointer", None)
@@ -39,17 +48,21 @@ class LangGraphRuntime:
                 # The stable thread already owns its message history. Replaying the
                 # database history would append every prior message a second time.
                 history = ()
-        response = await self._agent.arun(
-            user_id=request.user_id,
-            session_id=thread_id,
-            message=request.message,
-            history=history,
-            tool_results=request.tool_results,
-            run_id=request.run_id,
-            correlation_id=request.correlation_id,
-            traceparent=request.traceparent,
-            available_tools=request.available_tools,
-        )
+        arguments = {
+            "user_id": request.user_id,
+            "session_id": thread_id,
+            "message": request.message,
+            "history": history,
+            "tool_results": request.tool_results,
+            "run_id": request.run_id,
+            "correlation_id": request.correlation_id,
+            "traceparent": request.traceparent,
+            "available_tools": request.available_tools,
+        }
+        if on_event is None:
+            response = await self._agent.arun(**arguments)
+        else:
+            response = await self._agent.arun_stream(**arguments, on_event=on_event)
         calls = tuple(
             AgentToolCall(
                 call_id=tool_request.call_id or str(uuid4()),

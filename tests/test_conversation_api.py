@@ -141,6 +141,27 @@ def test_api_mounts_authentication_routes_and_returns_verified_identity():
     assert response.json() == {"user_id": "user-1"}
 
 
+def test_conversation_can_be_renamed_by_its_owner():
+    client, _, conversation_id = _client()
+
+    response = client.patch(f"/v1/conversations/{conversation_id}", json={"title": "Incident review"})
+
+    assert response.status_code == 200
+    assert response.json() == {"id": conversation_id, "title": "Incident review"}
+    assert client.get("/v1/conversations").json()[0]["title"] == "Incident review"
+
+
+def test_conversation_rename_is_owner_scoped_and_validated():
+    client, _, conversation_id = _client()
+    other = TestClient(
+        client.app,
+        headers={"Authorization": f"Bearer {issue_access_token('test-access-token-secret', 'other-user')}"},
+    )
+
+    assert other.patch(f"/v1/conversations/{conversation_id}", json={"title": "Not yours"}).status_code == 404
+    assert client.patch(f"/v1/conversations/{conversation_id}", json={"title": ""}).status_code == 422
+
+
 def test_run_events_are_available_as_sse_for_reconnect():
     client, _, conversation_id = _client()
     turn = client.post(

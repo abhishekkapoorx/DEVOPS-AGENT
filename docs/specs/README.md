@@ -11,5 +11,6 @@ These specifications define the approved REST-first, Textual, persistent, plugga
 5. [LangGraph runtime integration](./05-langgraph-runtime-integration.md)
 6. [Textual CLI](./06-textual-cli.md)
 7. [Production hardening](./07-production-hardening.md)
+8. [Chat-first Textual interface](./08-chat-first-textual-interface.md)
 
 Each specification is independently testable but follows the dependency order above.

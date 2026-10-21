@@ -33,6 +33,10 @@ class CreateConversation(BaseModel):
     title: str = Field(default="New conversation", min_length=1, max_length=200)
 
 
+class RenameConversation(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+
+
 class ConversationMessageInput(BaseModel):
     content: str = Field(min_length=1, max_length=100_000)
 
@@ -162,6 +166,26 @@ def create_app(
     ) -> list[ConversationOutput]:
         values = await conversations.list_for_user(principal.user_id)
         return [ConversationOutput(id=item.id, title=item.title) for item in values]
+
+    @app.patch(
+        "/v1/conversations/{conversation_id}",
+        response_model=ConversationOutput,
+        tags=["conversations"],
+    )
+    async def rename_conversation(
+        conversation_id: str,
+        body: RenameConversation,
+        principal: AuthenticatedPrincipal = Depends(authenticate),
+    ) -> ConversationOutput:
+        title = body.title.strip()
+        if not title:
+            raise HTTPException(status_code=422, detail="Conversation title cannot be blank")
+        conversation = await conversations.rename(
+            principal.user_id, conversation_id, title
+        )
+        if conversation is None:
+            raise HTTPException(status_code=404, detail="Conversation not found")
+        return ConversationOutput(id=conversation.id, title=conversation.title)
 
     @app.get(
         "/v1/conversations/{conversation_id}/messages",

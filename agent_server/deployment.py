@@ -216,8 +216,11 @@ def _mount_local_account_approval(
             f"<h1>{title}</h1>{notice}"
             "<p>This self-hosted account flow requires no external identity provider. "
             "Email verification and password recovery are not configured.</p>"
+            f"<nav><a href='?user_code={escape(user_code, quote=True)}&amp;mode=signin'>Sign in</a> · "
+            f"<a href='?user_code={escape(user_code, quote=True)}&amp;mode=signup'>Create account</a></nav>"
             f"<form method='post' action='/v1/auth/device/verify/{escape(approval_id, quote=True)}'>"
             f"<input type='hidden' name='user_code' value='{escape(user_code, quote=True)}'>"
+            f"<input type='hidden' name='mode' value='{escape(mode, quote=True)}'>"
             "<label>Email <input type='email' name='email' autocomplete='email' required maxlength='254'></label><br>"
             f"<label>Password <input type='password' name='password' autocomplete='{'new-password' if mode == 'signup' else 'current-password'}' "
             "required minlength='12' maxlength='1024'></label><br>"
@@ -240,9 +243,10 @@ def _mount_local_account_approval(
         response_class=HTMLResponse,
         include_in_schema=False,
     )
-    async def local_account_page(approval_id: str, user_code: str):
+    async def local_account_page(approval_id: str, user_code: str, mode: str | None = None):
         pending = await pending_request(approval_id, user_code)
-        return render_form(approval_id, user_code, pending.mode.value)
+        selected_mode = mode if mode in {"signin", "signup"} else pending.mode.value
+        return render_form(approval_id, user_code, selected_mode)
 
     @app.post(
         "/v1/auth/device/verify/{approval_id}",
@@ -252,22 +256,26 @@ def _mount_local_account_approval(
     async def local_account_decision(
         approval_id: str,
         user_code: str = Form(min_length=8, max_length=16),
+        mode: str | None = Form(default=None),
         email: str = Form(min_length=3, max_length=254),
         password: str = Form(min_length=1, max_length=1024),
     ):
         pending = await pending_request(approval_id, user_code)
+        mode = mode or pending.mode.value
+        if mode not in {"signin", "signup"}:
+            raise HTTPException(400, "Invalid account action")
         try:
-            if pending.mode.value == "signup":
+            if mode == "signup":
                 user_id = await accounts.sign_up(email, password)
             else:
                 user_id = await accounts.sign_in(email, password)
         except AccountAlreadyExists as error:
-            response = render_form(approval_id, user_code, pending.mode.value, str(error))
+            response = render_form(approval_id, user_code, mode, str(error))
             response.status_code = 409
             return response
         except AccountError as error:
-            status_code = 401 if pending.mode.value == "signin" else 400
-            response = render_form(approval_id, user_code, pending.mode.value, str(error))
+            status_code = 401 if mode == "signin" else 400
+            response = render_form(approval_id, user_code, mode, str(error))
             response.status_code = status_code
             return response
         if not await provider.decide(

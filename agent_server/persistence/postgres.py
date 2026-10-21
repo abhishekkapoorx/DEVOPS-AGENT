@@ -153,6 +153,21 @@ class PostgresConversationRepository:
             )
         return _conversation(row) if row else None
 
+    async def rename(self, user_id: str, conversation_id: str, title: str) -> Conversation | None:
+        async with self._sessions() as session:
+            row = await session.scalar(
+                select(ConversationRow).where(
+                    ConversationRow.id == conversation_id,
+                    ConversationRow.user_id == user_id,
+                )
+            )
+            if row is None:
+                return None
+            row.title = title
+            row.updated_at = datetime.now(timezone.utc)
+            await session.commit()
+            return _conversation(row)
+
     async def add_message(
         self, user_id: str, conversation_id: str, role: str, content: str
     ) -> ConversationMessage:
@@ -349,6 +364,27 @@ class PostgresConversationRepository:
             )
             await session.commit()
             return result.rowcount == 1
+
+    async def append_run_event(self, user_id, run_id, worker_id, event_type, data):
+        now = datetime.now(timezone.utc)
+        async with self._sessions() as session:
+            row = await session.scalar(
+                select(AgentRunRow).where(
+                    AgentRunRow.id == run_id,
+                    AgentRunRow.user_id == user_id,
+                    AgentRunRow.state == "running",
+                    AgentRunRow.lease_owner == worker_id,
+                )
+            )
+            if row is None:
+                raise RunLeaseLost("run lease is no longer owned by this worker")
+            event = RunEventRow(
+                run_id=run_id, event_type=event_type, data=dict(data), created_at=now
+            )
+            session.add(event)
+            await session.commit()
+            await session.refresh(event)
+            return RunEvent(event.sequence, event.run_id, event.event_type, event.data, event.created_at)
 
     async def complete_run(
         self, user_id: str, run_id: str, worker_id: str, message: str, tool_calls

@@ -43,6 +43,15 @@ class InMemoryConversationRepository:
             item = self._conversations.get(conversation_id)
             return item if item and item.user_id == user_id else None
 
+    async def rename(self, user_id: str, conversation_id: str, title: str) -> Conversation | None:
+        async with self._lock:
+            item = self._conversations.get(conversation_id)
+            if item is None or item.user_id != user_id:
+                return None
+            renamed = replace(item, title=title, updated_at=datetime.now(timezone.utc))
+            self._conversations[conversation_id] = renamed
+            return renamed
+
     async def add_message(
         self, user_id: str, conversation_id: str, role: str, content: str
     ) -> ConversationMessage:
@@ -149,6 +158,15 @@ class InMemoryConversationRepository:
                 run, lease_expires_at=now + timedelta(seconds=lease_seconds), updated_at=now
             )
             return True
+
+    async def append_run_event(self, user_id, run_id, worker_id, event_type, data):
+        async with self._lock:
+            run = self._owned_run(user_id, run_id)
+            if run.lease_owner != worker_id or run.state != "running":
+                raise RunLeaseLost("run lease is no longer owned by this worker")
+            now = datetime.now(timezone.utc)
+            self._append_run_event(run, event_type, dict(data), now)
+            return self._run_events[run_id][-1]
 
     async def complete_run(
         self,

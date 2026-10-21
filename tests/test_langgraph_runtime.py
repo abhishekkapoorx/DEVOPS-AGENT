@@ -155,3 +155,27 @@ async def test_runtime_passes_authorized_tool_catalog_to_the_server_agent():
     )
 
     assert agent.kwargs["available_tools"] == available_tools
+
+
+@pytest.mark.asyncio
+async def test_runtime_forwards_incremental_agent_text_to_stream_callback():
+    class StreamingAgent:
+        async def arun_stream(self, **kwargs):
+            await kwargs["on_event"]({"type": "agent_delta", "text": "**hello"})
+            return SimpleNamespace(message="**hello**", requests=())
+
+    emitted = []
+
+    async def receive(event):
+        emitted.append(event)
+
+    response = await LangGraphRuntime(agent=StreamingAgent()).run_stream(
+        AgentRequest(
+            user_id="user-1", conversation_id="conversation-1", run_id="run-1",
+            message="hello",
+        ),
+        on_event=receive,
+    )
+
+    assert response.message == "**hello**"
+    assert emitted == [{"type": "agent_delta", "text": "**hello"}]

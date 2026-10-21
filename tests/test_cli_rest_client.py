@@ -70,6 +70,27 @@ def test_rest_client_creates_conversation_submits_idempotently_and_replays_sse()
     assert len(requests) == 4
 
 
+def test_rest_client_renames_a_conversation_using_the_rest_contract():
+    observed = []
+
+    def opener(request, *, timeout):
+        observed.append(request)
+        assert request.method == "PATCH"
+        assert request.full_url.endswith("/v1/conversations/conversation%2Fone")
+        assert json.loads(request.data) == {"title": "New title"}
+        return _json_response({"id": "conversation/one", "title": "New title"})
+
+    client = RestAgentClient(
+        "https://example.test", access_token=lambda: "access",
+        refresh_access_token=lambda: None, opener=opener,
+    )
+
+    result = client.rename_conversation("conversation/one", "New title")
+
+    assert result["title"] == "New title"
+    assert len(observed) == 1
+
+
 def test_rest_client_refreshes_access_token_after_401():
     attempts = 0
 
@@ -148,3 +169,47 @@ def test_sse_reconnect_cursor_advances_only_after_complete_event():
         "/v1/runs/run-1/events/stream?after=0",
         "/v1/runs/run-1/events/stream?after=0",
     ]
+
+
+def test_sse_streams_tool_events_and_reconnects_after_their_sequence():
+    stream_requests = []
+    state_requests = 0
+
+    def opener(request, *, timeout):
+        nonlocal state_requests
+        path = request.full_url.split("example.test", 1)[1]
+        if request.method == "POST" and path == "/v1/conversations":
+            return _json_response({"id": "conversation-1"}, 201)
+        if request.method == "POST" and path.endswith("/messages"):
+            return _json_response({"run_id": "run-1", "status": "pending"}, 202)
+        if "/events/stream?" in path:
+            stream_requests.append(path)
+            if len(stream_requests) == 1:
+                return FakeResponse(
+                    b'id: 3\nevent: tool_call_started\ndata: {"name":"git.status"}\n\n'
+                )
+            return FakeResponse(
+                b'id: 4\nevent: completed\ndata: {"state":"completed","message":"**Done**"}\n\n'
+            )
+        if request.method == "GET" and path == "/v1/runs/run-1":
+            state_requests += 1
+            return _json_response({"status": "pending" if state_requests == 1 else "completed", "message": "**Done**"})
+        raise AssertionError(f"unexpected request {request.method} {path}")
+
+    received = []
+    client = RestAgentClient(
+        "https://example.test", access_token=lambda: "access",
+        refresh_access_token=lambda: None, opener=opener, max_reconnects=1,
+        sleep=lambda _: None,
+    )
+
+    result = client.ask("inspect", on_event=received.append)
+
+    assert result["message"] == "**Done**"
+    assert stream_requests == [
+        "/v1/runs/run-1/events/stream?after=0",
+        "/v1/runs/run-1/events/stream?after=3",
+    ]
+    assert received[0] == {
+        "type": "tool_call_started", "run_id": "run-1", "data": {"name": "git.status"}
+    }

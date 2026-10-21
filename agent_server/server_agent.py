@@ -9,10 +9,10 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from typing import Any, Mapping, Sequence
+from typing import Any, Awaitable, Callable, Mapping, Sequence
 
 from langchain.agents import create_agent
-from langchain_core.messages import BaseMessage, HumanMessage, ToolMessage
+from langchain_core.messages import AIMessageChunk, BaseMessage, HumanMessage, ToolMessage
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from agent_protocol import policy_for
@@ -149,6 +149,7 @@ class ServerAgent:
         correlation_id: str = "",
         traceparent: str | None = None,
         available_tools: Sequence[Mapping[str, Any]] = (),
+        on_event: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
     ) -> "AgentResponse":
         """Process one message without executing any requested operation."""
 
@@ -164,23 +165,41 @@ class ServerAgent:
             messages.append(
                 ToolMessage(content=json.dumps(dict(result), separators=(",", ":")), tool_call_id=call_id)
             )
-        result = await self._get_graph(available_tools).ainvoke(
-            {"messages": messages},
-            context=context.model_dump(),
-            config={
-                "configurable": {"thread_id": session_id},
-                "metadata": {
-                    key: value
-                    for key, value in {
-                        "run_id": run_id,
-                        "correlation_id": correlation_id,
-                        "traceparent": traceparent,
-                    }.items()
-                    if value
-                },
-                "run_name": "devops_agent_turn",
+        graph = self._get_graph(available_tools)
+        input_state = {"messages": messages}
+        config = {
+            "configurable": {"thread_id": session_id},
+            "metadata": {
+                key: value
+                for key, value in {
+                    "run_id": run_id,
+                    "correlation_id": correlation_id,
+                    "traceparent": traceparent,
+                }.items()
+                if value
             },
-        )
+            "run_name": "devops_agent_turn",
+        }
+        if on_event is None:
+            result = await graph.ainvoke(input_state, context=context.model_dump(), config=config)
+        else:
+            result = None
+            async for mode, chunk in graph.astream(
+                input_state,
+                context=context.model_dump(),
+                config=config,
+                stream_mode=["messages", "values"],
+            ):
+                if mode == "messages":
+                    message, _metadata = chunk
+                    if isinstance(message, AIMessageChunk):
+                        text = _message_text(message.content)
+                        if text:
+                            await on_event({"type": "agent_delta", "text": text})
+                elif mode == "values":
+                    result = chunk
+            if result is None:
+                raise RuntimeError("Agent stream finished without a final state")
         return AgentResponse.from_result(result, context=context)
 
 
@@ -234,3 +253,15 @@ async def run_agent(
 
 
 __all__ = ["AgentResponse", "SERVER_AGENT_PROMPT", "ServerAgent", "SessionContext", "ToolRequest", "registered_request_tools", "run_agent"]
+
+
+def _message_text(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join(
+            item.get("text", "")
+            for item in content
+            if isinstance(item, dict) and item.get("type") == "text" and isinstance(item.get("text"), str)
+        )
+    return ""

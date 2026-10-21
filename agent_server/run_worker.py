@@ -128,8 +128,7 @@ class AgentRunWorker:
             tool_results: list[dict[str, Any]] = []
             tool_calls: list[dict[str, Any]] = []
             for _round in range(self.max_tool_rounds):
-                result = await self.runtime.run(
-                    AgentRequest(
+                request = AgentRequest(
                         user_id=run.user_id,
                         conversation_id=run.conversation_id,
                         run_id=run.id,
@@ -140,7 +139,25 @@ class AgentRunWorker:
                         correlation_id=run.correlation_id,
                         traceparent=run.traceparent,
                     )
-                )
+                run_stream = getattr(self.runtime, "run_stream", None)
+                if run_stream is None:
+                    result = await self.runtime.run(request)
+                else:
+                    async def stream_event(event: dict[str, Any]) -> None:
+                        event_type = event.get("type")
+                        if event_type != "agent_delta":
+                            return
+                        text = event.get("text")
+                        if isinstance(text, str) and text:
+                            await self.runs.append_run_event(
+                                run.user_id,
+                                run.id,
+                                self.worker_id,
+                                "agent_delta",
+                                {"text": redact_secrets(text)},
+                            )
+
+                    result = await run_stream(request, on_event=stream_event)
                 if not result.tool_calls:
                     await self.runs.complete_run(
                         run.user_id, run.id, self.worker_id, result.message, tool_calls
@@ -149,6 +166,18 @@ class AgentRunWorker:
                 if self.tool_executor is None:
                     raise RuntimeError("Registered Tool Service is not configured")
                 for call in result.tool_calls:
+                    await self.runs.append_run_event(
+                        run.user_id,
+                        run.id,
+                        self.worker_id,
+                        "tool_call_started",
+                        {
+                            "call_id": call.call_id,
+                            "name": call.name,
+                            "version": call.version,
+                            "arguments": redact_secrets(dict(call.arguments)),
+                        },
+                    )
                     tool_result = await self.tool_executor.execute(
                         name=call.name,
                         version=call.version,
@@ -164,6 +193,18 @@ class AgentRunWorker:
                         "output": dict(tool_result.output),
                         "error": tool_result.error,
                     })
+                    await self.runs.append_run_event(
+                        run.user_id,
+                        run.id,
+                        self.worker_id,
+                        "tool_call_completed",
+                        {
+                            "call_id": call.call_id,
+                            "name": call.name,
+                            "status": tool_result.status,
+                            "result": serialized_result,
+                        },
+                    )
                     tool_calls.append(
                         {
                             "call_id": call.call_id,

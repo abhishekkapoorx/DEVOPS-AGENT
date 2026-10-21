@@ -130,3 +130,38 @@ def test_browser_signup_signin_and_current_identity():
         assert signed_in.status_code == 200
         signed_in_tokens = client.post("/v1/auth/device/poll", json={"device_code": signin["device_code"]}).json()["tokens"]
         assert signed_in_tokens["user_id"] == "person@example.com"
+
+
+def test_signin_device_page_can_switch_to_signup_without_restarting_device_flow():
+    repository = MemoryRepository()
+    provider = PostgresDeviceApprovalProvider(repository, "http://testserver")
+    service = AuthSessionService(
+        repository=repository,
+        approval_provider=provider,
+        access_token_secret="this-is-a-long-test-secret-value",
+        poll_interval=0,
+    )
+    app = FastAPI()
+    app.include_router(create_auth_router(service))
+    _mount_local_account_approval(app, provider, LocalAccountService(repository))
+
+    with TestClient(app) as client:
+        started = client.post("/v1/auth/device", json={"mode": "signin"}).json()
+        path = started["verification_url"].replace("http://testserver", "")
+        signup_page = client.get(path, params={"user_code": started["user_code"], "mode": "signup"})
+        assert signup_page.status_code == 200
+        assert "Create your account" in signup_page.text
+        assert "name='mode' value='signup'" in signup_page.text
+
+        approved = client.post(
+            path,
+            data={
+                "user_code": started["user_code"],
+                "mode": "signup",
+                "email": "new-user@example.com",
+                "password": "a-long-test-password",
+            },
+        )
+        assert approved.status_code == 200
+        tokens = client.post("/v1/auth/device/poll", json={"device_code": started["device_code"]}).json()["tokens"]
+        assert tokens["user_id"] == "new-user@example.com"

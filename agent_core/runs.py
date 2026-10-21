@@ -68,6 +68,11 @@ class RunRepository(Protocol):
 
     async def renew_run_lease(self, worker_id: str, run_id: str, lease_seconds: int) -> bool: ...
 
+    async def append_run_event(
+        self, user_id: str, run_id: str, worker_id: str, event_type: str,
+        data: Mapping[str, object],
+    ) -> RunEvent: ...
+
     async def complete_run(
         self,
         user_id: str,

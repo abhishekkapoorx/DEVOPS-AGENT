@@ -111,6 +111,13 @@ class RestAgentClient:
             raise RestApiError(502, "Agent API returned an invalid conversation")
         return response
 
+    def rename_conversation(self, conversation_id: str, title: str) -> dict[str, Any]:
+        path = f"/v1/conversations/{urllib.parse.quote(conversation_id, safe='')}"
+        response = self._json_request("PATCH", path, {"title": title[:200]})
+        if not isinstance(response, dict) or response.get("id") != conversation_id:
+            raise RestApiError(502, "Agent API returned an invalid renamed conversation")
+        return response
+
     def list_messages(self, conversation_id: str) -> list[dict[str, Any]]:
         path = f"/v1/conversations/{urllib.parse.quote(conversation_id, safe='')}/messages"
         response = self._json_request("GET", path)
@@ -155,10 +162,6 @@ class RestAgentClient:
                 if not decoded:
                     if data_lines:
                         data = json.loads("\n".join(data_lines))
-                        if event_type in {"created", "running", "resumed", "completed", "failed"}:
-                            delivered_sequence = event_sequence
-                            if delivered_sequence is None:
-                                delivered_sequence = int(data.get("sequence", sequence))
                         event = {"type": event_type, "run_id": run_id, "data": data}
                         if on_event:
                             if event_type == "completed" and data.get("message"):
@@ -171,8 +174,10 @@ class RestAgentClient:
                                 )
                             else:
                                 on_event(event)
-                        if event_type in {"created", "running", "resumed", "completed", "failed"}:
-                            sequence = max(sequence, delivered_sequence)
+                        delivered_sequence = event_sequence
+                        if delivered_sequence is None:
+                            delivered_sequence = int(data.get("sequence", sequence))
+                        sequence = max(sequence, delivered_sequence)
                         if event_type == "completed":
                             return sequence
                         if event_type == "failed":
