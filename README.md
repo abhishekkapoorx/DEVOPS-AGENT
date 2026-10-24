@@ -16,6 +16,8 @@ devops-agent --api-url https://your-agent.example
 
 The CLI starts the local helper as a child process. Both use the same OS-stored login. Only one helper can be connected per account at a time so requests cannot be sent to the wrong workspace. Every shell command requires approval. File reads are limited to the launch directory; file writes and deletes require approval.
 
+The agent can list files with an absolute workspace path. Linux exposes `grep`; Windows exposes `ripgrep` with its executable included in the CLI package. Each search runs locally over the launch directory.
+
 ## Run the server locally
 
 ```powershell

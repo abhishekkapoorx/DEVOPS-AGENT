@@ -41,8 +41,11 @@ class ToolApprovalScreen(ModalScreen[bool]):
         self.payload = payload
 
     def compose(self) -> ComposeResult:
-        command = " ".join(str(arg) for arg in self.payload.get("args", []))
-        yield Static(f"Approve local {self.payload.get('tool', 'tool')} command?\n\n{command}", id="approval")
+        name = self.payload.get("name", "tool")
+        arguments = self.payload.get("arguments", {})
+        command = arguments.get("argv") if isinstance(arguments, dict) else None
+        details = " ".join(str(arg) for arg in command) if isinstance(command, list) else json.dumps(arguments, sort_keys=True)
+        yield Static(f"Approve local {name}?\n\n{details}", id="approval")
         yield Button("Approve", variant="success", id="approve")
         yield Button("Deny", variant="error", id="deny")
 
@@ -132,6 +135,14 @@ class TextualAgentApp(App[None]):
                 continue
             if event.get("type") == "approval_request":
                 self.call_from_thread(self._show_tool_approval, event)
+            elif event.get("type") == "helper_error":
+                self.call_from_thread(self._show_helper_error, event)
+
+    def _show_helper_error(self, payload: dict[str, Any]) -> None:
+        message = str(payload.get("message", "Local helper connection interrupted"))
+        message = message[:500]
+        self.query_one("#status", Static).update(message)
+        self._mount_system_message(f"Local helper: {message}")
 
     def _show_tool_approval(self, payload: dict[str, Any]) -> None:
         self.push_screen(
@@ -145,7 +156,8 @@ class TextualAgentApp(App[None]):
             return
         process.stdin.write(json.dumps({"approved": approved}) + "\n")
         process.stdin.flush()
-        self.query_one("#status", Static).update(f"Signed in as {tokens.user_id}")
+        message = "Approval sent to local helper" if approved else "Tool request denied"
+        self.query_one("#status", Static).update(message)
 
     async def _open_initial_chat(self) -> None:
         assert self.client is not None

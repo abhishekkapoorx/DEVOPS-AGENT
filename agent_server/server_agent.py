@@ -15,6 +15,13 @@ from langchain_core.messages import AIMessageChunk, BaseMessage, HumanMessage, T
 from langchain_core.tools import tool
 from langgraph.types import Command, interrupt
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from agent_protocol import (
+    COMMAND_TOOL_NAMES,
+    CommandArguments,
+    ListFilesArguments,
+    SearchArguments,
+    local_tool_definition,
+)
 
 
 class SessionContext(BaseModel):
@@ -43,21 +50,47 @@ def registered_request_tools(available_tools: Sequence[Mapping[str, Any]]) -> tu
         version = definition.get("version")
         if not isinstance(name, str) or not isinstance(version, str):
             continue
-        tool_name, separator, action = name.partition(".")
-        if not separator or tool_name not in {"aws", "az", "gcloud", "kubectl", "docker", "git", "files"}:
+        contract = local_tool_definition(name, version)
+        if contract is None:
             continue
         description = str(definition.get("description") or name)
-        def make_tool(tool_name: str, action: str, version: str, description: str):
-            @tool(f"{tool_name}_{action}", description=description)
-            def request(argv: list[str], cwd: str | None = None) -> str:
-                result = interrupt(ToolRequest(
-                    tool=tool_name, action=action, version=version,
-                    arguments={"argv": argv, "cwd": cwd},
-                ).model_dump())
-                return json.dumps(result, separators=(",", ":"))
-            return request
-        tools.append(make_tool(tool_name, action, version, description))
+        if name in {f"{tool_name}.command" for tool_name in COMMAND_TOOL_NAMES}:
+            tools.append(_command_request_tool(contract.tool, version, description))
+        elif name == "files.list_files":
+            tools.append(_list_files_request_tool(version, description))
+        elif name in {"files.grep", "files.ripgrep"}:
+            tools.append(_search_request_tool(contract.action, version, description))
     return tuple(tools)
+
+
+def _command_request_tool(tool_name: str, version: str, description: str) -> Any:
+    @tool(f"{tool_name}_command", description=description, args_schema=CommandArguments)
+    def request(argv: list[str], cwd: str | None = None) -> str:
+        return _interrupt_for_local_tool(tool_name, "command", version, {"argv": argv, "cwd": cwd})
+    return request
+
+
+def _list_files_request_tool(version: str, description: str) -> Any:
+    @tool("files_list_files", description=description, args_schema=ListFilesArguments)
+    def request(path: str) -> str:
+        return _interrupt_for_local_tool("files", "list_files", version, {"path": path})
+    return request
+
+
+def _search_request_tool(action: str, version: str, description: str) -> Any:
+    @tool(f"files_{action}", description=description, args_schema=SearchArguments)
+    def request(pattern: str) -> str:
+        return _interrupt_for_local_tool("files", action, version, {"pattern": pattern})
+    return request
+
+
+def _interrupt_for_local_tool(
+    tool_name: str, action: str, version: str, arguments: dict[str, Any]
+) -> str:
+    result = interrupt(ToolRequest(
+        tool=tool_name, action=action, version=version, arguments=arguments,
+    ).model_dump())
+    return json.dumps(result, separators=(",", ":"))
 
 
 SERVER_AGENT_PROMPT = """You are the server-side DevOps Agent.

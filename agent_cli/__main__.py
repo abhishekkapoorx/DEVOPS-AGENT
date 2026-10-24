@@ -10,7 +10,7 @@ import sys
 import subprocess
 from typing import Any, Sequence
 
-from .executor import CommandExecutor, ExecutionRequest, SUPPORTED_TOOLS
+from .executor import LocalToolExecutor, SUPPORTED_TOOLS
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -30,8 +30,8 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _print_result(executor: CommandExecutor, request: ExecutionRequest) -> None:
-    print(executor.execute(request).to_json())
+def _print_result(executor: LocalToolExecutor, name: str, arguments: dict[str, Any]) -> None:
+    print(executor.execute(name, arguments).to_json())
 
 
 def _print_progress(message: dict[str, Any]) -> None:
@@ -76,8 +76,8 @@ def _stop_local_helper(process: subprocess.Popen | None) -> None:
         process.kill()
 
 
-def interactive(executor: CommandExecutor | None = None) -> None:
-    executor = executor or CommandExecutor(approval_callback=_approve_local_request)
+def interactive(executor: LocalToolExecutor | None = None) -> None:
+    executor = executor or LocalToolExecutor(approval_callback=_approve_local_request)
     print("Enter a tool name, or 'quit' to exit.")
     while True:
         tool = input("tool> ").strip()
@@ -89,7 +89,8 @@ def interactive(executor: CommandExecutor | None = None) -> None:
         raw_args = input("args> ")
         args = tuple(shlex.split(raw_args))
         try:
-            _print_result(executor, ExecutionRequest(tool=tool, args=args))
+            name, arguments = _cli_tool_call(tool, args)
+            _print_result(executor, name, arguments)
         except (ValueError, OSError) as exc:
             print(json.dumps({"error": str(exc)}))
 
@@ -182,12 +183,26 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
     if args.tool is None:
         _parser().error("provide --interactive or --tool")
-    _print_result(CommandExecutor(approval_callback=_approve_local_request), ExecutionRequest(tool=args.tool, args=tuple(args.args)))
+    name, arguments = _cli_tool_call(args.tool, tuple(args.args))
+    _print_result(LocalToolExecutor(approval_callback=_approve_local_request), name, arguments)
     return 0
 
 
-def _approve_local_request(request: ExecutionRequest, _operation) -> bool:
-    print(f"Tool request: {request.tool} {' '.join(request.args)}")
+def _cli_tool_call(tool: str, args: tuple[str, ...]) -> tuple[str, dict[str, Any]]:
+    if tool != "files":
+        return f"{tool}.command", {"argv": list(args)}
+    if not args:
+        raise ValueError("files requires an action")
+    action, *values = args
+    if action in {"list", "list_files"} and len(values) == 1:
+        return "files.list_files", {"path": values[0]}
+    if action in {"grep", "ripgrep"} and len(values) == 1:
+        return f"files.{action}", {"pattern": values[0]}
+    raise ValueError("files supports list <absolute-path>, grep <regex>, or ripgrep <regex>")
+
+
+def _approve_local_request(name: str, arguments: dict[str, Any], _operation) -> bool:
+    print(f"Tool request: {name} {json.dumps(arguments, sort_keys=True)}")
     try:
         return input("Allow this command? [y/N] ").strip().lower() in {"y", "yes"}
     except (EOFError, KeyboardInterrupt):

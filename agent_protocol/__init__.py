@@ -7,6 +7,18 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from .security import OperationClass, OperationPolicy, UnknownOperationError, policy_for, redact_secrets
+from .local_tools import (
+    COMMAND_TOOL_NAMES,
+    LOCAL_TOOL_DEFINITIONS,
+    PLATFORMS,
+    CommandArguments,
+    ListFilesArguments,
+    LocalToolDefinition,
+    SearchArguments,
+    available_local_tool_definitions,
+    local_tool_definition,
+    validate_local_tool_arguments,
+)
 
 
 class Message(BaseModel):
@@ -52,8 +64,15 @@ class ErrorMessage(Message):
 
 __all__ = [
     "AgentMessage",
+    "COMMAND_TOOL_NAMES",
+    "CommandArguments",
     "ErrorMessage",
     "Message",
+    "LOCAL_TOOL_DEFINITIONS",
+    "ListFilesArguments",
+    "LocalToolDefinition",
+    "PLATFORMS",
+    "SearchArguments",
     "TokenRequest",
     "ToolRequestMessage",
     "ToolResultMessage",
@@ -63,4 +82,7 @@ __all__ = [
     "UnknownOperationError",
     "policy_for",
     "redact_secrets",
+    "available_local_tool_definitions",
+    "local_tool_definition",
+    "validate_local_tool_arguments",
 ]

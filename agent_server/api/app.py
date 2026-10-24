@@ -9,6 +9,7 @@ import json
 import re
 from typing import Callable
 from contextlib import asynccontextmanager
+from urllib.parse import unquote
 
 from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Query, Response, status
 from fastapi.responses import StreamingResponse
@@ -40,6 +41,13 @@ class RenameConversation(BaseModel):
 
 class ConversationMessageInput(BaseModel):
     content: str = Field(min_length=1, max_length=100_000)
+
+
+class LocalToolResultInput(BaseModel):
+    exit_code: int
+    stdout: str = Field(default="", max_length=64_000)
+    stderr: str = Field(default="", max_length=64_000)
+    duration_ms: float = 0
 
 
 class ConversationOutput(BaseModel):
@@ -130,32 +138,21 @@ def create_app(
         return AuthenticatedPrincipal(user_id=user.user_id)
 
     if broker is not None:
-        class LocalToolResultInput(BaseModel):
-            exit_code: int
-            stdout: str = Field(default="", max_length=64_000)
-            stderr: str = Field(default="", max_length=64_000)
-            duration_ms: float = 0
-
         @app.get("/v1/local-tools/stream", tags=["local tools"])
         async def stream_local_tools(
+            platform: str = Header(alias="X-Local-Platform", pattern="^(linux|windows|other)$"),
+            workspace: str = Header(alias="X-Local-Workspace", min_length=1, max_length=12_288),
             principal: AuthenticatedPrincipal = Depends(authenticate),
         ) -> StreamingResponse:
-            if not broker.connect_helper(principal.user_id):
+            if not broker.connect_helper(principal.user_id, platform, unquote(workspace)):
                 raise HTTPException(status_code=409, detail="A local helper is already connected for this account")
 
             async def events():
-                try:
-                    while True:
-                        try:
-                            payload = await asyncio.wait_for(
-                                broker.next_call(principal.user_id), timeout=15
-                            )
-                        except TimeoutError:
-                            yield ": keep-alive\n\n"
-                            continue
+                async for payload in broker.stream_calls(principal.user_id):
+                    if payload is None:
+                        yield ": keep-alive\n\n"
+                    else:
                         yield "event: tool_request\ndata: " + json.dumps(payload, separators=(",", ":")) + "\n\n"
-                finally:
-                    broker.disconnect_helper(principal.user_id)
 
             return StreamingResponse(
                 events(), media_type="text/event-stream",
