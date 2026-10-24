@@ -46,9 +46,9 @@ async def test_broker_routes_a_tool_call_to_the_user_helper_and_returns_its_resu
 
 
 @pytest.mark.asyncio
-async def test_broker_rejects_calls_unavailable_on_connected_helper_platform(tmp_path):
+async def test_broker_rejects_calls_unavailable_on_connected_helper_platform():
     broker = LocalToolBroker(timeout=1)
-    assert broker.connect_helper("user-1", "windows", str(tmp_path))
+    assert broker.connect_helper("user-1", "windows", r"C:\workspace")
     context = ToolExecutionContext(
         user_id="user-1", run_id="run-1", call_id="call-2", scopes=frozenset()
     )
