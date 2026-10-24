@@ -1,16 +1,9 @@
-# Production architecture specifications
+# Architecture specifications
 
-These specifications define the approved REST-first, Textual, persistent, pluggable-agent architecture and the separate registered-tool execution service.
+The current architecture uses a user-installed CLI and local helper for workspace tools, with authentication, orchestration, and run state kept on the backend. Earlier architecture documents are retained as historical records; instructions for a server-hosted Tool Service or WebSocket transport are superseded.
 
-## Delivery order
+## Delivery streams
 
-1. [Architecture foundation](./01-architecture-foundation.md)
-2. [Authentication and CLI sessions](./02-authentication-and-cli-sessions.md)
-3. [REST API and persistence](./03-rest-api-and-persistence.md)
-4. [Registered Tool Service](./04-registered-tool-service.md)
-5. [LangGraph runtime integration](./05-langgraph-runtime-integration.md)
-6. [Textual CLI](./06-textual-cli.md)
-7. [Production hardening](./07-production-hardening.md)
-8. [Chat-first Textual interface](./08-chat-first-textual-interface.md)
-
-Each specification is independently testable but follows the dependency order above.
+1. User package: CLI, local helper, authentication, approval, and workspace-bounded execution.
+2. Backend: authentication, durable conversations and runs, LangGraph orchestration, and local-tool request/result endpoints.
+3. Cleanup and docs: remove obsolete transports and server-side tool execution; preserve inactive indexing/RAG source and record MCP as future work.

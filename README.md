@@ -7,24 +7,83 @@ The product has two runtime parts:
 
 The user package contains `agent_cli` and the small shared security module only. It does not package server agents, prompts, or orchestration code.
 
-## Install the user package
+## Requirements
+
+- Python 3.12 or newer
+- Docker with the Docker Compose plugin
+- An API key for the model provider selected in `.env`
+
+Install the command line tools you want the agent to use (for example, AWS CLI,
+Azure CLI, Google Cloud CLI, `kubectl`, Docker CLI, or Git) on the same machine
+where you run the user CLI.
+
+## Start the backend
+
+From the repository root, create the local environment file:
 
 ```powershell
-python -m pip install ".[cli]"
-devops-agent --api-url https://your-agent.example
+Copy-Item .env.example .env
 ```
 
-The CLI starts the local helper as a child process. Both use the same OS-stored login. Only one helper can be connected per account at a time so requests cannot be sent to the wrong workspace. Every shell command requires approval. File reads are limited to the launch directory; file writes and deletes require approval.
-
-The agent can list files with an absolute workspace path. Linux exposes `grep`; Windows exposes `ripgrep` with its executable included in the CLI package. Each search runs locally over the launch directory.
-
-## Run the server locally
+Generate a secret and copy its output into `DEVOPS_AGENT_ACCESS_TOKEN_SECRET`
+in `.env`:
 
 ```powershell
-docker compose up --build
+python -c "import secrets; print(secrets.token_urlsafe(32))"
 ```
 
-Compose runs Postgres, migrations, and one API backend. The user’s workspace is never mounted into the server. Configure `.env` with the database URL, token secret, public URL, auth mode, model provider, and provider credentials.
+In `.env`, select the model provider and set its API key. The example is
+configured for OpenAI; keys for OpenAI, Groq, and Google have corresponding
+variables in the file. Keep `DEVOPS_AGENT_ENABLE_MCP_AGENTS=false`.
+
+Build and start Postgres, run database migrations, and start the API:
+
+```powershell
+docker compose --env-file .env up --build -d
+docker compose --env-file .env ps
+docker compose --env-file .env logs -f api
+```
+
+The API is available at `http://127.0.0.1:8000`. Compose does not mount your
+workspace into the backend. Stop the stack with `docker compose --env-file .env down`.
+
+## Install and run the user CLI
+
+In a second terminal, from the repository root, create and activate a virtual
+environment, then install the CLI and its local Tool Service helper:
+
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -e ".[cli]"
+```
+
+For a non-editable install from the checkout, use
+`python -m pip install ".[cli]"` instead of the editable install command.
+
+Sign in, then open the chat interface:
+
+```powershell
+devops-agent --auth --api-url http://127.0.0.1:8000
+devops-agent --api-url http://127.0.0.1:8000
+```
+
+Run the CLI from the directory you want the agent to access. It starts the
+local helper automatically; the helper executes tools on your machine. Shell
+commands require approval, file reads stay inside the launch directory, and
+file writes or deletes require approval. The helper stores credentials through
+the operating system credential store.
+
+To ask one question without opening the chat interface:
+
+```powershell
+devops-agent --api-url http://127.0.0.1:8000 --ask "Check git status"
+```
+
+The CLI can also connect to a deployed backend by replacing the API URL with
+that backend's HTTPS address. See [the architecture overview](docs/specs/09-client-local-tool-service.md)
+and [local run guide](docs/local-run.md) for more detail.
 
 ## Current boundaries
 
