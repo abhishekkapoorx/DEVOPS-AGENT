@@ -10,6 +10,8 @@ import urllib.request
 from typing import Any, Callable, Mapping, Protocol
 from uuid import uuid4
 
+from agent_core.conversations import DEFAULT_CONVERSATION_TITLE
+
 
 class RestApiError(RuntimeError):
     def __init__(self, status_code: int, message: str) -> None:
@@ -72,7 +74,7 @@ class RestAgentClient:
         self._traceparent = f"00-{trace_id}-{uuid4().hex[:16]}-01"
         if conversation_id is None:
             conversation = self._json_request(
-                "POST", "/v1/conversations", {"title": message[:200] or "New conversation"}
+                "POST", "/v1/conversations", {"title": DEFAULT_CONVERSATION_TITLE}
             )
             conversation_id = str(conversation["id"])
         turn = self._json_request(
@@ -105,7 +107,7 @@ class RestAgentClient:
             raise RestApiError(502, "Agent API returned an invalid conversation list")
         return response
 
-    def create_conversation(self, title: str = "New conversation") -> dict[str, Any]:
+    def create_conversation(self, title: str = DEFAULT_CONVERSATION_TITLE) -> dict[str, Any]:
         response = self._json_request("POST", "/v1/conversations", {"title": title[:200]})
         if not isinstance(response, dict) or not isinstance(response.get("id"), str):
             raise RestApiError(502, "Agent API returned an invalid conversation")

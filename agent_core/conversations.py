@@ -7,6 +7,9 @@ from datetime import datetime
 from typing import Protocol, Sequence
 
 
+DEFAULT_CONVERSATION_TITLE = "New conversation"
+
+
 @dataclass(frozen=True)
 class Conversation:
     id: str

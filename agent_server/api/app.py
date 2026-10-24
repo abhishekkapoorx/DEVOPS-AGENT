@@ -16,10 +16,11 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from agent_core import AgentRuntime
-from agent_core.conversations import ConversationRepository
+from agent_core.conversations import DEFAULT_CONVERSATION_TITLE, ConversationRepository
 from agent_core.runs import IdempotencyConflict, RunRepository, RunState
 from agent_server.auth_sessions import AuthSessionService
 from agent_server.run_worker import AgentRunWorker
+from agent_server.conversation_titles import ConversationTitleGenerator
 from agent_server.local_tool_broker import LocalToolBroker
 from .auth_routes import create_auth_router
 from agent_server.observability import CorrelationMetricsMiddleware, HttpMetrics, InMemoryRateLimiter
@@ -32,7 +33,7 @@ class AuthenticatedPrincipal:
 
 
 class CreateConversation(BaseModel):
-    title: str = Field(default="New conversation", min_length=1, max_length=200)
+    title: str = Field(default=DEFAULT_CONVERSATION_TITLE, min_length=1, max_length=200)
 
 
 class RenameConversation(BaseModel):
@@ -88,6 +89,7 @@ def create_app(
     runs: RunRepository,
     auth_service: AuthSessionService,
     run_worker: AgentRunWorker | None = None,
+    conversation_title_generator: ConversationTitleGenerator | None = None,
     tool_executor=None,
     local_tool_broker: LocalToolBroker | None = None,
     tool_scopes_for_user: Callable[[str], frozenset[str]] = lambda _user_id: frozenset(),
@@ -102,6 +104,7 @@ def create_app(
         conversations=conversations,
         runs=runs,
         tool_executor=tool_executor,
+        conversation_title_generator=conversation_title_generator,
         tool_scopes_for_user=tool_scopes_for_user,
     )
 

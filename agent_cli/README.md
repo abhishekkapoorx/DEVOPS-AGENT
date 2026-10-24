@@ -19,8 +19,15 @@ devops-agent --api-url https://agent.example.com --tui
 ```
 
 The Textual interface lists and reopens server-side conversations, streams
-agent progress, and can cancel an active run. It remembers the selected
-conversation ID locally; conversation messages remain on the backend.
+agent and tool progress, and can cancel an active run. The footer shows
+keyboard shortcuts to create or change chats, copy or export the selected
+conversation, and log out. Chat text can be selected with the mouse and copied with Ctrl+C.
+Copy and export include the persisted conversation transcript as readable
+plain text. The app remembers the selected conversation ID locally;
+conversation messages remain on the backend. A new chat remains a local draft
+until the first non-empty prompt is sent. The server generates a title from the
+first prompt for new chats with the default title; generated titles are limited
+to 10 words. A title supplied with `/new <title>` is kept as entered.
 `--auth` opens the standalone sign-in/sign-up screen.
 
 Ask the agent through the REST API. If the browser session is missing, the CLI

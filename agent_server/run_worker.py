@@ -8,10 +8,15 @@ from uuid import uuid4
 from typing import Any, Callable, Protocol
 
 from agent_core import AgentRequest, AgentRuntime, AgentToolCall
-from agent_core.conversations import ConversationRepository
+from agent_core.conversations import DEFAULT_CONVERSATION_TITLE, ConversationRepository
 from agent_core.runs import AgentRun, RunLeaseLost, RunRepository
 from agent_core.tools import ToolExecutionContext, ToolResult
 from agent_protocol import redact_secrets
+from .conversation_titles import (
+    ConversationTitleGenerator,
+    MAX_CONVERSATION_TITLE_LENGTH,
+    MAX_CONVERSATION_TITLE_WORDS,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +41,7 @@ class AgentRunWorker:
         poll_interval: float = 0.5,
         max_concurrency: int = 4,
         tool_executor: ToolExecutor | None = None,
+        conversation_title_generator: ConversationTitleGenerator | None = None,
         max_tool_rounds: int = 8,
         tool_scopes_for_user: Callable[[str], frozenset[str]] = lambda _user_id: frozenset(),
     ) -> None:
@@ -49,6 +55,7 @@ class AgentRunWorker:
         self.poll_interval = poll_interval
         self.max_concurrency = max_concurrency
         self.tool_executor = tool_executor
+        self.conversation_title_generator = conversation_title_generator
         self.max_tool_rounds = max_tool_rounds
         self.tool_scopes_for_user = tool_scopes_for_user
         self._active: set[asyncio.Task] = set()
@@ -109,6 +116,8 @@ class AgentRunWorker:
                 run.user_id, run.conversation_id
             )
             history = _history_before_message(all_messages, run.message_id)
+            if not history:
+                await self._generate_initial_conversation_title(run)
             persisted_history = tuple(
                 {"role": item.role, "content": item.content} for item in history
             )
@@ -243,6 +252,35 @@ class AgentRunWorker:
                 await heartbeat
             except asyncio.CancelledError:
                 pass
+
+    async def _generate_initial_conversation_title(self, run: AgentRun) -> None:
+        generator = self.conversation_title_generator
+        if generator is None:
+            return
+        try:
+            conversation = await self.conversations.get(run.user_id, run.conversation_id)
+            if conversation is None or conversation.title != DEFAULT_CONVERSATION_TITLE:
+                return
+            title = (await generator.generate_title(run.input_message)).strip()
+            if not title or len(title.split()) > MAX_CONVERSATION_TITLE_WORDS:
+                logger.warning("Conversation title generator returned an invalid title for run %s", run.id)
+                return
+            # Check again after generation so a concurrent user rename wins.
+            current = await self.conversations.get(run.user_id, run.conversation_id)
+            if current is None or current.title != DEFAULT_CONVERSATION_TITLE:
+                return
+            await self.conversations.rename(
+                run.user_id,
+                run.conversation_id,
+                title[:MAX_CONVERSATION_TITLE_LENGTH],
+            )
+        except Exception as exc:
+            # Title generation is an enhancement; it must not fail the user's run.
+            logger.warning(
+                "Unable to generate a title for conversation run %s (%s)",
+                run.id,
+                type(exc).__name__,
+            )
 
     async def _renew_lease(self, run_id: str) -> None:
         interval = max(1, self.lease_seconds // 3)

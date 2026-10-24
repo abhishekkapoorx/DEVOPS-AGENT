@@ -16,6 +16,7 @@ from agent_core import AgentRequest, AgentResponse
 from agent_server.accounts import AccountAlreadyExists, AccountError, LocalAccountService
 from agent_server.api.app import create_app
 from agent_server.auth_sessions import AuthSessionService
+from agent_server.conversation_titles import ModelConversationTitleGenerator
 from agent_server.development_auth import InProcessDeviceApprovalProvider
 from agent_server.langgraph_runtime import postgres_runtime
 from agent_server.persistence.auth import PostgresAuthRepository
@@ -98,8 +99,9 @@ class PostgresLangGraphRuntime:
             return await runtime.run(request)
 
 
-def _runtime(settings: Settings) -> Any:
-    return PostgresLangGraphRuntime(settings.database_url, _model(settings))
+def _runtime(settings: Settings, model: Any | None = None) -> Any:
+    selected_model = model if model is not None else _model(settings)
+    return PostgresLangGraphRuntime(settings.database_url, selected_model)
 
 
 def _model(settings: Settings) -> Any:
@@ -128,7 +130,17 @@ def create_api_from_environment() -> FastAPI:
     )
     auth = AuthSessionService(repository=auth_repository, approval_provider=provider, access_token_secret=settings.access_token_secret)
     local_tools = LocalToolBroker()
-    app = create_app(runtime=_runtime(settings), conversations=PostgresConversationRepository(sessions), runs=PostgresConversationRepository(sessions), auth_service=auth, tool_executor=local_tools, local_tool_broker=local_tools, database_engine=engine)
+    model = _model(settings)
+    app = create_app(
+        runtime=_runtime(settings, model),
+        conversations=PostgresConversationRepository(sessions),
+        runs=PostgresConversationRepository(sessions),
+        auth_service=auth,
+        conversation_title_generator=ModelConversationTitleGenerator(model),
+        tool_executor=local_tools,
+        local_tool_broker=local_tools,
+        database_engine=engine,
+    )
     if is_local_auth:
         _mount_local_account_approval(app, provider, LocalAccountService(auth_repository))
     else:
