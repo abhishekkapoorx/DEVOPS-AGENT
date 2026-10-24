@@ -2,6 +2,7 @@ import asyncio
 import pytest
 
 from agent_core import AgentResponse, AgentToolCall
+from agent_core.conversations import DEFAULT_CONVERSATION_TITLE
 from agent_core.tools import ToolResult
 from agent_server.persistence.memory import InMemoryConversationRepository
 from agent_server.run_worker import AgentRunWorker
@@ -10,6 +11,67 @@ from agent_server.run_worker import AgentRunWorker
 class FakeRuntime:
     async def run(self, request):
         return AgentResponse(message=f"processed: {request.message}")
+
+
+class FakeTitleGenerator:
+    def __init__(self, title="Generated title"):
+        self.title = title
+        self.messages = []
+
+    async def generate_title(self, first_message):
+        self.messages.append(first_message)
+        return self.title
+
+
+@pytest.mark.asyncio
+async def test_worker_generates_title_from_only_the_first_message():
+    repository = InMemoryConversationRepository()
+    conversation = await repository.create("user-1", DEFAULT_CONVERSATION_TITLE)
+    generator = FakeTitleGenerator("Investigating deployment failures")
+
+    first_run, _ = await repository.create_or_get_run(
+        "user-1", conversation.id, "first", "hash-first", "Why did deployment fail?"
+    )
+    worker = AgentRunWorker(
+        runtime=FakeRuntime(),
+        conversations=repository,
+        runs=repository,
+        conversation_title_generator=generator,
+    )
+    await worker.run_once()
+
+    second_run, _ = await repository.create_or_get_run(
+        "user-1", conversation.id, "second", "hash-second", "Show me the logs"
+    )
+    await worker.run_once()
+
+    renamed = await repository.get("user-1", conversation.id)
+    assert renamed is not None
+    assert renamed.title == "Investigating deployment failures"
+    assert generator.messages == ["Why did deployment fail?"]
+    assert first_run.id != second_run.id
+
+
+@pytest.mark.asyncio
+async def test_worker_does_not_replace_a_user_supplied_conversation_title():
+    repository = InMemoryConversationRepository()
+    conversation = await repository.create("user-1", "My chosen title")
+    generator = FakeTitleGenerator("Generated title")
+    await repository.create_or_get_run(
+        "user-1", conversation.id, "first", "hash-first", "First prompt"
+    )
+
+    worker = AgentRunWorker(
+        runtime=FakeRuntime(),
+        conversations=repository,
+        runs=repository,
+        conversation_title_generator=generator,
+    )
+    await worker.run_once()
+
+    current = await repository.get("user-1", conversation.id)
+    assert current is not None and current.title == "My chosen title"
+    assert generator.messages == []
 
 
 @pytest.mark.asyncio

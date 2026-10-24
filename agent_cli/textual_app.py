@@ -3,19 +3,23 @@
 from __future__ import annotations
 
 import asyncio
+from io import StringIO
 import json
+from pathlib import Path
 import shlex
 import subprocess
 import threading
 from typing import Any, Callable, Protocol
 
+from rich.console import Console
 from rich.markdown import Markdown
 from rich.text import Text
+from agent_core.conversations import DEFAULT_CONVERSATION_TITLE
 from textual import work
 from textual.app import App, ComposeResult
 from textual.screen import ModalScreen
-from textual.containers import Vertical
-from textual.widgets import Button, Footer, Header, Input, Static
+from textual.containers import Horizontal, Vertical
+from textual.widgets import Button, Footer, Header, Input, OptionList, Static
 
 from .auth import DeviceLogin, TokenResponse
 from .local_state import ConversationSelectionStore, JsonConversationSelectionStore
@@ -35,6 +39,7 @@ Command = Callable[[str], Any]
 
 class ToolApprovalScreen(ModalScreen[bool]):
     CSS = "ToolApprovalScreen { align: center middle; } #approval { width: 70; height: auto; border: round $accent; padding: 1 2; background: $panel; } #approval-buttons { height: 3; align: center middle; }"
+    BINDINGS = [("escape", "cancel", "Deny")]
 
     def __init__(self, payload: dict[str, Any]) -> None:
         super().__init__()
@@ -52,18 +57,97 @@ class ToolApprovalScreen(ModalScreen[bool]):
     def on_button_pressed(self, event: Button.Pressed) -> None:
         self.dismiss(event.button.id == "approve")
 
+    def action_cancel(self) -> None:
+        self.dismiss(False)
+
+
+class ConversationPickerScreen(ModalScreen[str | None]):
+    CSS = "ConversationPickerScreen { align: center middle; } #conversation-picker { width: 70; height: 80%; border: round $accent; padding: 1 2; background: $panel; } #conversation-options { height: 1fr; }"
+    BINDINGS = [("escape", "cancel", "Cancel")]
+
+    def __init__(self, conversations: list[dict[str, Any]]) -> None:
+        super().__init__()
+        self.conversations = conversations
+
+    def compose(self) -> ComposeResult:
+        yield Vertical(
+            Static("Change chat", id="conversation-picker-title"),
+            OptionList(
+                *[
+                    str(item.get("title") or "Untitled chat")
+                    for item in self.conversations
+                ],
+                id="conversation-options",
+            ),
+            Static("Select a chat · Esc to cancel"),
+            id="conversation-picker",
+        )
+
+    def on_mount(self) -> None:
+        self.query_one("#conversation-options", OptionList).focus()
+
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        self.dismiss(str(self.conversations[event.option_index]["id"]))
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
+class ExportConversationScreen(ModalScreen[str | None]):
+    CSS = "ExportConversationScreen { align: center middle; } #export-dialog { width: 72; height: auto; border: round $accent; padding: 1 2; background: $panel; } #export-path { margin: 1 0; } #export-buttons { height: 3; align: right middle; }"
+    BINDINGS = [("escape", "cancel", "Cancel")]
+
+    def compose(self) -> ComposeResult:
+        yield Vertical(
+            Static("Export conversation as plain text"),
+            Input(placeholder="Path to .txt file", id="export-path"),
+            Horizontal(
+                Button("Export", variant="primary", id="export-confirm"),
+                Button("Cancel", id="export-cancel"),
+                id="export-buttons",
+            ),
+            id="export-dialog",
+        )
+
+    def on_mount(self) -> None:
+        self.query_one("#export-path", Input).focus()
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "export-confirm":
+            path = self.query_one("#export-path", Input).value.strip()
+            if path:
+                self.dismiss(path)
+        else:
+            self.dismiss(None)
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        if event.input.id == "export-path" and event.value.strip():
+            self.dismiss(event.value.strip())
+
 
 class TextualAgentApp(App[None]):
     TITLE = "DevOps Agent"
     SUB_TITLE = "Chat"
+    ALLOW_SELECT = True
     CSS = """
     #status { height: 1; color: $text-muted; }
+    #run-status { height: auto; max-height: 6; overflow-y: auto; color: $text-muted; padding: 0 2; }
     #messages { height: 1fr; overflow-y: auto; padding: 1 2; }
     #message { dock: bottom; margin: 0 1 1 1; }
     .entry { height: auto; margin-bottom: 1; }
     """
 
-    BINDINGS = [("ctrl+c", "quit", "Quit")]
+    BINDINGS = [
+        ("ctrl+q", "quit", "Quit"),
+        ("ctrl+alt+n", "new_chat", "New chat"),
+        ("ctrl+alt+r", "change_chat", "Change chat"),
+        ("ctrl+alt+c", "copy_chat", "Copy chat"),
+        ("ctrl+alt+e", "export_chat", "Export chat"),
+        ("ctrl+alt+l", "logout", "Log out"),
+    ]
 
     def __init__(self, auth: DeviceLogin, client_factory,
                  selection_store: ConversationSelectionStore | None = None,
@@ -77,7 +161,12 @@ class TextualAgentApp(App[None]):
         self.client: ConversationClient | None = None
         self.conversations: list[dict[str, Any]] = []
         self.selected_conversation_id: str | None = None
+        self._pending_conversation_title: str | None = None
+        self._pending_auto_title = False
         self.active_run_id: str | None = None
+        self._run_in_progress = False
+        self._run_status_label = ""
+        self._tool_statuses: dict[str, str] = {}
         self._assistant_bubble: Static | None = None
         self._assistant_content = ""
         self.commands: dict[str, tuple[str, Command]] = {
@@ -92,6 +181,7 @@ class TextualAgentApp(App[None]):
     def compose(self) -> ComposeResult:
         yield Header()
         yield Static("Starting…", id="status")
+        yield Static("", id="run-status")
         yield Vertical(id="messages")
         yield Input(placeholder="Message your agent…  (/help for commands)", id="message")
         yield Footer()
@@ -102,6 +192,105 @@ class TextualAgentApp(App[None]):
     def on_input_submitted(self, event: Input.Submitted) -> None:
         if event.input.id == "message":
             self.send_message()
+
+    def action_change_chat(self) -> None:
+        self.run_worker(self._change_chat())
+
+    def action_new_chat(self) -> None:
+        self.run_worker(self._cmd_new(""))
+
+    async def _change_chat(self) -> None:
+        if self.client is None:
+            return
+        if self._run_in_progress:
+            self.query_one("#status", Static).update("Wait for the current run before changing chats")
+            return
+        try:
+            self.conversations = await asyncio.to_thread(self.client.list_conversations)
+            if not self.conversations:
+                self.query_one("#status", Static).update("No saved chats")
+                return
+            self.push_screen(
+                ConversationPickerScreen(self.conversations),
+                self._select_chat,
+            )
+        except Exception as error:
+            self.query_one("#status", Static).update(f"Could not load chats: {error}")
+
+    def _select_chat(self, conversation_id: str | None) -> None:
+        if conversation_id:
+            self.run_worker(self._load_selected_chat(conversation_id))
+
+    async def _load_selected_chat(self, conversation_id: str) -> None:
+        match = next(
+            (item for item in self.conversations if str(item.get("id")) == conversation_id),
+            None,
+        )
+        if match is None:
+            return
+        self.selected_conversation_id = conversation_id
+        self._pending_auto_title = match.get("title") == DEFAULT_CONVERSATION_TITLE
+        await self._save_selection()
+        await self._load_messages()
+        self.query_one("#status", Static).update(str(match.get("title", "Chat")))
+        self.query_one("#message", Input).focus()
+
+    def action_copy_chat(self) -> None:
+        self.run_worker(self._copy_chat())
+
+    async def _copy_chat(self) -> None:
+        try:
+            transcript = await self._conversation_transcript()
+            if not transcript:
+                self.query_one("#status", Static).update("This chat has no messages to copy")
+                return
+            self.copy_to_clipboard(transcript)
+            self.query_one("#status", Static).update("Conversation copied to clipboard")
+        except Exception as error:
+            self.query_one("#status", Static).update(f"Could not copy conversation: {error}")
+
+    def action_export_chat(self) -> None:
+        self.push_screen(ExportConversationScreen(), self._export_chat_to)
+
+    def _export_chat_to(self, path: str | None) -> None:
+        if path:
+            self.run_worker(self._write_conversation_export(path))
+
+    async def _write_conversation_export(self, path: str) -> None:
+        try:
+            transcript = await self._conversation_transcript()
+            if not transcript:
+                self.query_one("#status", Static).update("This chat has no messages to export")
+                return
+            await asyncio.to_thread(self._write_text_file, path, transcript)
+            self.query_one("#status", Static).update(f"Conversation exported to {path}")
+        except Exception as error:
+            self.query_one("#status", Static).update(f"Could not export conversation: {error}")
+
+    async def _conversation_transcript(self) -> str:
+        if self.client is None or self.selected_conversation_id is None:
+            return ""
+        messages = await asyncio.to_thread(
+            self.client.list_messages, self.selected_conversation_id
+        )
+        return "\n\n".join(
+            f"{str(message.get('role', 'assistant')).capitalize()}: "
+            f"{self._plain_message(str(message.get('content', '')))}"
+            for message in messages
+        ).strip()
+
+    @staticmethod
+    def _plain_message(content: str) -> str:
+        output = StringIO()
+        Console(file=output, force_terminal=False, width=100).print(Markdown(content))
+        return output.getvalue().strip()
+
+    @staticmethod
+    def _write_text_file(path: str, content: str) -> None:
+        Path(path).expanduser().write_text(content + "\n", encoding="utf-8")
+
+    def action_logout(self) -> None:
+        self.run_worker(self._cmd_logout(""))
 
     @work(exclusive=True, group="auth")
     async def restore_session(self) -> None:
@@ -165,9 +354,17 @@ class TextualAgentApp(App[None]):
         saved = await asyncio.to_thread(self.selection_store.load) if self.selection_store else None
         selected = next((c for c in self.conversations if str(c.get("id")) == saved), None)
         if selected is None:
-            selected = await asyncio.to_thread(self.client.create_conversation)
-            self.conversations.insert(0, selected)
+            self.selected_conversation_id = None
+            self._pending_conversation_title = None
+            if saved and self.selection_store:
+                await asyncio.to_thread(self.selection_store.clear)
+            await self.query_one("#messages", Vertical).remove_children()
+            self.query_one("#message", Input).focus()
+            self.query_one("#status", Static).update("New chat · signed in")
+            return
         self.selected_conversation_id = str(selected["id"])
+        self._pending_conversation_title = None
+        self._pending_auto_title = selected.get("title") == DEFAULT_CONVERSATION_TITLE
         await self._save_selection()
         await self._load_messages()
         self.query_one("#message", Input).focus()
@@ -199,15 +396,32 @@ class TextualAgentApp(App[None]):
         if content.startswith("/"):
             await self._dispatch_command(content)
             return
-        if self.client is None or self.selected_conversation_id is None:
+        if self.client is None:
             self.query_one("#status", Static).update("Waiting for browser sign-in…")
             return
+        if self.selected_conversation_id is None:
+            try:
+                title = self._pending_conversation_title or DEFAULT_CONVERSATION_TITLE
+                created = await asyncio.to_thread(self.client.create_conversation, title)
+                self.conversations.insert(0, created)
+                self.selected_conversation_id = str(created["id"])
+                self._pending_auto_title = title == DEFAULT_CONVERSATION_TITLE
+                self._pending_conversation_title = None
+                await self._save_selection()
+            except Exception as error:
+                field.value = content
+                self.query_one("#status", Static).update(f"Could not create chat: {error}")
+                return
         container = self.query_one("#messages", Vertical)
         await container.mount(self._make_message("You", content))
         self._assistant_content = ""
         self._assistant_bubble = Static(Markdown(""), classes="entry")
         await container.mount(self._assistant_bubble)
         self.active_run_id = None
+        self._run_in_progress = True
+        self._run_status_label = "Agent is thinking…"
+        self._tool_statuses.clear()
+        self._refresh_run_status()
         self.query_one("#status", Static).update("Thinking…")
         try:
             result = await asyncio.to_thread(self.client.ask, content,
@@ -215,9 +429,19 @@ class TextualAgentApp(App[None]):
             final = str(result.get("message", ""))
             if final and not self._assistant_content:
                 self._append_assistant(final)
+            self._run_status_label = "Run completed"
+            self._refresh_run_status()
+            self._run_in_progress = False
             self.query_one("#status", Static).update("Ready")
+            if self._pending_auto_title:
+                await self._refresh_auto_title()
         except Exception as error:
+            self._run_status_label = f"Run failed: {error}"
+            self._refresh_run_status()
+            self._run_in_progress = False
             self.query_one("#status", Static).update(f"Request failed: {error}")
+            if self._pending_auto_title:
+                await self._refresh_auto_title(f"Request failed: {error}")
 
     async def _dispatch_command(self, raw: str) -> None:
         try:
@@ -246,12 +470,17 @@ class TextualAgentApp(App[None]):
     async def _cmd_new(self, title: str) -> None:
         if self.client is None:
             return
-        item = await asyncio.to_thread(self.client.create_conversation, title or "New conversation")
-        self.conversations.insert(0, item)
-        self.selected_conversation_id = str(item["id"])
-        await self._save_selection()
-        await self._load_messages()
-        self.query_one("#status", Static).update(str(item.get("title", "New conversation")))
+        if self._run_in_progress:
+            self.query_one("#status", Static).update("Wait for the current run before starting a new chat")
+            return
+        self.selected_conversation_id = None
+        self._pending_conversation_title = title.strip() or None
+        self._pending_auto_title = self._pending_conversation_title is None
+        if self.selection_store:
+            await asyncio.to_thread(self.selection_store.clear)
+        await self.query_one("#messages", Vertical).remove_children()
+        self.query_one("#status", Static).update("New chat · send a message to start")
+        self.query_one("#message", Input).focus()
 
     async def _cmd_resume(self, target: str) -> None:
         if self.client is None:
@@ -271,6 +500,8 @@ class TextualAgentApp(App[None]):
             self.query_one("#status", Static).update("Chat not found (or id is ambiguous); use /resume")
             return
         self.selected_conversation_id = str(match["id"])
+        self._pending_conversation_title = None
+        self._pending_auto_title = match.get("title") == DEFAULT_CONVERSATION_TITLE
         await self._save_selection()
         await self._load_messages()
         self.query_one("#status", Static).update(str(match.get("title", "Chat")))
@@ -280,7 +511,25 @@ class TextualAgentApp(App[None]):
             self.query_one("#status", Static).update("Usage: /rename <title>")
             return
         await asyncio.to_thread(self.client.rename_conversation, self.selected_conversation_id, title.strip())
+        self._pending_auto_title = False
         self.query_one("#status", Static).update(f"Renamed chat to {title.strip()}")
+
+    async def _refresh_auto_title(self, state: str = "Ready") -> None:
+        if self.client is None or self.selected_conversation_id is None:
+            return
+        try:
+            self.conversations = await asyncio.to_thread(self.client.list_conversations)
+        except Exception:
+            return
+        self._pending_auto_title = False
+        current = next(
+            (item for item in self.conversations if str(item.get("id")) == self.selected_conversation_id),
+            None,
+        )
+        if current is not None:
+            self.query_one("#status", Static).update(
+                f"{current.get('title', DEFAULT_CONVERSATION_TITLE)} · {state}"
+            )
 
     async def _cmd_cancel(self, _args: str) -> None:
         if self.client is not None and self.active_run_id:
@@ -294,6 +543,8 @@ class TextualAgentApp(App[None]):
             await asyncio.to_thread(self.auth.logout)
         self.client = None
         self.selected_conversation_id = None
+        self._pending_conversation_title = None
+        self._pending_auto_title = False
         if self.selection_store:
             await asyncio.to_thread(self.selection_store.clear)
         await self.query_one("#messages", Vertical).remove_children()
@@ -333,9 +584,22 @@ class TextualAgentApp(App[None]):
         elif kind in {"tool_call_started", "tool_call_completed"}:
             name = data.get("name", "tool")
             status = "running" if kind == "tool_call_started" else data.get("status", "completed")
-            self.call_from_thread(self._mount_system_message, f"Tool call: {name} — {status}")
+            call_id = str(data.get("call_id") or name)
+            self.call_from_thread(self._set_tool_status, call_id, str(name), str(status))
         elif kind == "agent_message":
             self.call_from_thread(self._set_assistant, str(event.get("message", "")))
+
+    def _set_tool_status(self, call_id: str, name: str, status: str) -> None:
+        self._tool_statuses[call_id] = f"{name}: {status}"
+        self._refresh_run_status()
+
+    def _refresh_run_status(self) -> None:
+        lines = [self._run_status_label] if self._run_status_label else []
+        lines.extend(self._tool_statuses.values())
+        self._update_run_status("\n".join(lines))
+
+    def _update_run_status(self, message: str) -> None:
+        self.query_one("#run-status", Static).update(message)
 
     def _append_assistant(self, fragment: str) -> None:
         self._assistant_content += fragment
