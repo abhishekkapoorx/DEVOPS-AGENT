@@ -13,13 +13,4 @@ __all__ = [
     "ExecutionResult",
     "LocalExecutionClient",
     "UnsupportedToolError",
-    "AgentWebSocketClient",
 ]
-
-
-def __getattr__(name: str):
-    if name == "AgentWebSocketClient":
-        from .websocket_client import AgentWebSocketClient
-
-        return AgentWebSocketClient
-    raise AttributeError(name)

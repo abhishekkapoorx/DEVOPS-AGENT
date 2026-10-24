@@ -12,18 +12,15 @@ from __future__ import annotations
 from typing import Any, Dict, Optional
 
 from langchain_core.language_models import LanguageModelLike
-from langchain_core.retrievers import BaseRetriever
 from loguru import logger
 
 from .message_trimming import create_message_trimming_hook
 from .planning import create_planning_hook
-from .rag import create_rag_context_hook
 
 
 def build_combined_pre_model_hook(
     *,
     model: LanguageModelLike,
-    rag_retriever: Optional[BaseRetriever] = None,
     trim_kwargs: Optional[Dict[str, Any]] = None,
     planning_kwargs: Optional[Dict[str, Any]] = None,
     enable_trimming: bool = True,
@@ -32,15 +29,12 @@ def build_combined_pre_model_hook(
 ) -> callable:
     """
     Construct a reusable pre-model hook that applies (optionally) trimming,
-    retrieval augmented generation (RAG) context injection, and planning.
+    planning.
 
     Parameters
     ----------
     model
         The language model instance used for summarisation/planning steps.
-    rag_retriever
-        Optional retriever used to fetch additional context. When ``None`` the
-        RAG step is skipped automatically.
     trim_kwargs
         Keyword arguments passed to ``create_message_trimming_hook``.
     planning_kwargs
@@ -74,11 +68,6 @@ def build_combined_pre_model_hook(
         if enable_trimming
         else None
     )
-    rag_hook = (
-        create_rag_context_hook(rag_retriever)
-        if rag_retriever is not None
-        else None
-    )
     planning_hook = (
         create_planning_hook(model=model, **planning_kwargs)
         if enable_planning
@@ -89,7 +78,6 @@ def build_combined_pre_model_hook(
         step_name
         for step_name, hook in [
             ("trimming", message_trimming_hook),
-            ("rag", rag_hook),
             ("planning", planning_hook),
         ]
         if hook is not None
@@ -104,9 +92,6 @@ def build_combined_pre_model_hook(
 
         if message_trimming_hook is not None:
             updated_state = message_trimming_hook(updated_state)
-
-        if rag_hook is not None:
-            updated_state = rag_hook(updated_state)
 
         if planning_hook is not None:
             updated_state = planning_hook(updated_state)

@@ -7,15 +7,14 @@ that an operation is needed, but it never performs that operation.
 from __future__ import annotations
 
 import json
-import re
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Mapping, Sequence
 
 from langchain.agents import create_agent
 from langchain_core.messages import AIMessageChunk, BaseMessage, HumanMessage, ToolMessage
-from langchain_core.tools import StructuredTool
+from langchain_core.tools import tool
+from langgraph.types import Command, interrupt
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
-from agent_protocol import policy_for
 
 
 class SessionContext(BaseModel):
@@ -36,63 +35,28 @@ class ToolRequest(BaseModel):
     call_id: str | None = Field(default=None, min_length=1, exclude=True)
     arguments: dict[str, Any] = Field(default_factory=dict)
 
-    def model_post_init(self, __context: Any) -> None:
-        policy_for(self.tool, self.action)
-
-
-class _RegisteredToolInput(BaseModel):
-    arguments: dict[str, Any] = Field(
-        description="Arguments matching the registered tool's input schema."
-    )
-
-
-def registered_request_tools(available_tools: Sequence[Mapping[str, Any]]) -> tuple[StructuredTool, ...]:
-    """Create model-facing request functions only for the authorized registry catalog."""
-
+def registered_request_tools(available_tools: Sequence[Mapping[str, Any]]) -> tuple[Any, ...]:
+    """Create native LangChain tools that return local execution requests."""
     tools = []
-    for index, definition in enumerate(available_tools):
+    for definition in available_tools:
         name = definition.get("name")
         version = definition.get("version")
         if not isinstance(name, str) or not isinstance(version, str):
             continue
         tool_name, separator, action = name.partition(".")
-        if not separator:
-            continue
-        try:
-            policy_for(tool_name, action)
-        except ValueError:
+        if not separator or tool_name not in {"aws", "az", "gcloud", "kubectl", "docker", "git", "files"}:
             continue
         description = str(definition.get("description") or name)
-        input_schema = definition.get("input_schema")
-        description += (
-            " Input JSON Schema: "
-            + json.dumps(input_schema, separators=(",", ":"), sort_keys=True)
-            if isinstance(input_schema, dict)
-            else ""
-        )
-
-        def request(
-            arguments: dict[str, Any],
-            *,
-            _tool=tool_name,
-            _action=action,
-            _version=version,
-        ) -> str:
-            return ToolRequest(
-                tool=_tool,
-                action=_action,
-                version=_version,
-                arguments=arguments,
-            ).model_dump_json()
-
-        tools.append(
-            StructuredTool.from_function(
-                func=request,
-                name=f"registered_{re.sub(r'[^A-Za-z0-9_-]', '_', name)[:40]}_{index}",
-                description=f"Request registered tool {name}@{version}. {description}",
-                args_schema=_RegisteredToolInput,
-            )
-        )
+        def make_tool(tool_name: str, action: str, version: str, description: str):
+            @tool(f"{tool_name}_{action}", description=description)
+            def request(argv: list[str], cwd: str | None = None) -> str:
+                result = interrupt(ToolRequest(
+                    tool=tool_name, action=action, version=version,
+                    arguments={"argv": argv, "cwd": cwd},
+                ).model_dump())
+                return json.dumps(result, separators=(",", ":"))
+            return request
+        tools.append(make_tool(tool_name, action, version, description))
     return tuple(tools)
 
 
@@ -156,17 +120,19 @@ class ServerAgent:
         context = SessionContext(user_id=user_id, session_id=session_id)
         if not message.strip():
             raise ValueError("message must not be empty")
-        messages = list(history or ())
-        messages.append(HumanMessage(content=message))
-        for result in tool_results:
-            call_id = result.get("call_id")
-            if not isinstance(call_id, str) or not call_id:
-                raise ValueError("Tool results require a call_id")
-            messages.append(
-                ToolMessage(content=json.dumps(dict(result), separators=(",", ":")), tool_call_id=call_id)
-            )
         graph = self._get_graph(available_tools)
-        input_state = {"messages": messages}
+        if tool_results:
+            input_state = Command(
+                resume={
+                    str(result["call_id"]): dict(result)
+                    for result in tool_results
+                    if isinstance(result.get("call_id"), str)
+                }
+            )
+        else:
+            messages = list(history or ())
+            messages.append(HumanMessage(content=message))
+            input_state = {"messages": messages}
         config = {
             "configurable": {"thread_id": session_id},
             "metadata": {
@@ -215,6 +181,13 @@ class AgentResponse:
     def from_result(cls, result: Mapping[str, Any], *, context: SessionContext) -> "AgentResponse":
         messages = result.get("messages", ())
         requests: list[ToolRequest] = []
+        for item in result.get("__interrupt__", ()):
+            payload = getattr(item, "value", None)
+            try:
+                request = ToolRequest.model_validate(payload)
+                requests.append(request.model_copy(update={"call_id": getattr(item, "id", None)}))
+            except (TypeError, ValueError, ValidationError):
+                continue
         for item in messages:
             if not isinstance(item, ToolMessage):
                 continue

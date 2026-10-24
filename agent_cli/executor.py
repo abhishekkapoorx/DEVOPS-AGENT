@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
-from agent_protocol import OperationClass, policy_for, redact_secrets
+from agent_protocol import OperationClass, redact_secrets
 
 from .audit import AuditSink, new_record
 
@@ -97,12 +97,13 @@ def _run_subprocess(command: Sequence[str], *, cwd: str | None, env: Mapping[str
 class CommandExecutor:
     """Execute supported local tools through one common contract."""
 
-    def __init__(self, runner: Runner | None = None, *, approval_callback: ApprovalCallback | None = None, audit_sink: AuditSink | None = None, user_id: str = "cli-user", session_id: str = "local") -> None:
+    def __init__(self, runner: Runner | None = None, *, approval_callback: ApprovalCallback | None = None, audit_sink: AuditSink | None = None, user_id: str = "cli-user", session_id: str = "local", workspace: str | Path | None = None) -> None:
         self._runner = runner or _run_subprocess
         self._approval_callback = approval_callback
         self._audit_sink = audit_sink
         self._user_id = user_id
         self._session_id = session_id
+        self.workspace = Path(workspace or Path.cwd()).resolve()
         self.audit_records = []
 
     @staticmethod
@@ -110,7 +111,7 @@ class CommandExecutor:
         if cwd is None:
             return None
         requested = Path(cwd).resolve(strict=False)
-        allowed = Path.cwd().resolve(strict=False)
+        allowed = self.workspace
         try:
             requested.relative_to(allowed)
         except ValueError as exc:
@@ -124,16 +125,27 @@ class CommandExecutor:
             request = ExecutionRequest.from_mapping(request)
 
         action = request.args[0]
-        operation = policy_for(request.tool, action)
+        file_change = request.tool == "files" and action in {"write", "delete"}
+        operation = OperationClass.WRITE if request.tool != "files" or file_change else OperationClass.READ
         cwd = self._validate_cwd(request.cwd)
-        approved = operation.classification != OperationClass.DESTRUCTIVE
+        approved = request.tool == "files" and not file_change
         if not approved and self._approval_callback is not None:
-            approved = bool(self._approval_callback(request, operation.classification))
+            approved = bool(self._approval_callback(request, operation))
         started = time.perf_counter()
         if not approved:
             duration_ms = round((time.perf_counter() - started) * 1000, 3)
             result = ExecutionResult(request.tool, request.args, 403, "", "Explicit approval required", duration_ms, False)
             self._audit(result, operation.classification, action, started, "denied", request_id)
+            return result
+        if request.tool == "files":
+            try:
+                output = self._files(request.args)
+                exit_code, stdout, stderr = 0, output[:64_000], ""
+            except (OSError, ValueError) as exc:
+                exit_code, stdout, stderr = 1, "", str(exc)
+            duration_ms = round((time.perf_counter() - started) * 1000, 3)
+            result = ExecutionResult(request.tool, request.args, exit_code, stdout, stderr, duration_ms)
+            self._audit(result, operation, action, started, "succeeded" if exit_code == 0 else "failed", request_id)
             return result
         command: Sequence[str] = (request.tool, *request.args)
         try:
@@ -150,12 +162,59 @@ class CommandExecutor:
             tool=request.tool,
             args=request.args,
             exit_code=exit_code,
-            stdout=redact_secrets(stdout),
-            stderr=redact_secrets(stderr),
+            stdout=redact_secrets(stdout[:64_000]),
+            stderr=redact_secrets(stderr[:64_000]),
             duration_ms=duration_ms,
         )
         self._audit(result, operation.classification, action, started, "succeeded" if exit_code == 0 else "failed", request_id)
         return result
+
+    def _files(self, args: Sequence[str]) -> str:
+        action = args[0]
+        if action == "list":
+            path = self._file_path(args[1] if len(args) > 1 else ".")
+            if not path.is_dir():
+                raise ValueError("list requires a directory")
+            return "\n".join(sorted(item.name for item in path.iterdir()))
+        if action == "read" and len(args) == 2:
+            return self._file_path(args[1]).read_text(encoding="utf-8")[:100_000]
+        if action == "search" and len(args) >= 2:
+            needle = args[1]
+            root = self._file_path(args[2] if len(args) > 2 else ".")
+            matches = []
+            for path in root.rglob("*"):
+                try:
+                    path.resolve(strict=False).relative_to(self.workspace)
+                except ValueError:
+                    continue
+                if path.is_file() and len(matches) < 500:
+                    try:
+                        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+                            if needle in line:
+                                matches.append(f"{path.relative_to(self.workspace)}:{number}:{line[:500]}")
+                    except (OSError, UnicodeError):
+                        continue
+            return "\n".join(matches)
+        if action == "write" and len(args) >= 3:
+            path = self._file_path(args[1])
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(" ".join(args[2:]), encoding="utf-8")
+            return f"Wrote {path.relative_to(self.workspace)}"
+        if action == "delete" and len(args) == 2:
+            path = self._file_path(args[1])
+            if path.is_dir():
+                raise ValueError("delete only removes files")
+            path.unlink()
+            return f"Deleted {path.relative_to(self.workspace)}"
+        raise ValueError("files supports list [path], read <path>, search <text> [path], write <path> <content>, delete <path>")
+
+    def _file_path(self, value: str) -> Path:
+        path = (self.workspace / value).resolve(strict=False)
+        try:
+            path.relative_to(self.workspace)
+        except ValueError as exc:
+            raise ValueError("file path is outside the local client workspace") from exc
+        return path
 
     def _audit(self, result: ExecutionResult, operation: OperationClass, action: str, started: float, outcome: str, request_id: str) -> None:
         record = new_record(user_id=self._user_id, session_id=self._session_id, request_id=request_id, tool=result.tool, action=action, operation=operation, outcome=outcome, started_at=started, duration_ms=result.duration_ms, details=result.to_dict())

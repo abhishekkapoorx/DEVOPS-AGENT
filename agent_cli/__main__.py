@@ -7,6 +7,7 @@ import json
 import os
 import shlex
 import sys
+import subprocess
 from typing import Any, Sequence
 
 from .executor import CommandExecutor, ExecutionRequest, SUPPORTED_TOOLS
@@ -51,8 +52,32 @@ def _print_progress(message: dict[str, Any]) -> None:
         print(f"Agent error: {message.get('message', 'unknown error')}", file=sys.stderr, flush=True)
 
 
+def _start_local_helper(api_url: str, *, approval_ipc: bool = False) -> subprocess.Popen:
+    command = [sys.executable, "-m", "agent_cli.tool_service", "--api-url", api_url]
+    if approval_ipc:
+        command.append("--approval-ipc")
+    return subprocess.Popen(
+        command,
+        cwd=os.getcwd(),
+        stdin=subprocess.PIPE if approval_ipc else None,
+        stdout=subprocess.PIPE if approval_ipc else None,
+        text=approval_ipc,
+        bufsize=1 if approval_ipc else -1,
+    )
+
+
+def _stop_local_helper(process: subprocess.Popen | None) -> None:
+    if process is None or process.poll() is not None:
+        return
+    process.terminate()
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        process.kill()
+
+
 def interactive(executor: CommandExecutor | None = None) -> None:
-    executor = executor or CommandExecutor()
+    executor = executor or CommandExecutor(approval_callback=_approve_local_request)
     print("Enter a tool name, or 'quit' to exit.")
     while True:
         tool = input("tool> ").strip()
@@ -114,7 +139,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                     refresh_access_token=refresh_access_token,
                 )
 
-            run_textual_app(auth, client_factory)
+            helper = []
+            def start_helper(_tokens):
+                if not helper:
+                    helper.append(_start_local_helper(args.api_url, approval_ipc=True))
+                return helper[0]
+            try:
+                run_textual_app(auth, client_factory, on_signed_in=start_helper)
+            finally:
+                _stop_local_helper(helper[0] if helper else None)
             return 0
     if args.ask:
         tokens = auth.restore()
@@ -133,11 +166,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                 (refreshed.access_token if (refreshed := auth.restore()) else None)
             ),
         )
-        result = client.ask(
-            args.ask,
-            conversation_id=args.session_id,
-            on_event=_print_progress,
-        )
+        helper = _start_local_helper(args.api_url)
+        try:
+            result = client.ask(
+                args.ask,
+                conversation_id=args.session_id,
+                on_event=_print_progress,
+            )
+        finally:
+            _stop_local_helper(helper)
         print(result.get("message", ""))
         return 0
     if args.interactive:
@@ -145,8 +182,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
     if args.tool is None:
         _parser().error("provide --interactive or --tool")
-    _print_result(CommandExecutor(), ExecutionRequest(tool=args.tool, args=tuple(args.args)))
+    _print_result(CommandExecutor(approval_callback=_approve_local_request), ExecutionRequest(tool=args.tool, args=tuple(args.args)))
     return 0
+
+
+def _approve_local_request(request: ExecutionRequest, _operation) -> bool:
+    print(f"Tool request: {request.tool} {' '.join(request.args)}")
+    try:
+        return input("Allow this command? [y/N] ").strip().lower() in {"y", "yes"}
+    except (EOFError, KeyboardInterrupt):
+        return False
 
 
 if __name__ == "__main__":

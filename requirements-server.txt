@@ -1,4 +1,4 @@
-# Core dependencies for the cloud-side agent and authenticated transport.
+# Private backend dependencies. MCP support is intentionally not installed.
 alembic>=1.16,<2
 asyncpg>=0.30,<1
 fastapi>=0.119,<1

@@ -19,6 +19,7 @@ from agent_core.conversations import ConversationRepository
 from agent_core.runs import IdempotencyConflict, RunRepository, RunState
 from agent_server.auth_sessions import AuthSessionService
 from agent_server.run_worker import AgentRunWorker
+from agent_server.local_tool_broker import LocalToolBroker
 from .auth_routes import create_auth_router
 from agent_server.observability import CorrelationMetricsMiddleware, HttpMetrics, InMemoryRateLimiter
 from .security import require_authenticated_user
@@ -80,6 +81,7 @@ def create_app(
     auth_service: AuthSessionService,
     run_worker: AgentRunWorker | None = None,
     tool_executor=None,
+    local_tool_broker: LocalToolBroker | None = None,
     tool_scopes_for_user: Callable[[str], frozenset[str]] = lambda _user_id: frozenset(),
     rate_limiter: InMemoryRateLimiter | None = None,
     metrics: HttpMetrics | None = None,
@@ -116,6 +118,7 @@ def create_app(
     app.state.runs = runs
     app.state.conversations = conversations
     app.state.run_worker = worker
+    broker = local_tool_broker or (tool_executor if isinstance(tool_executor, LocalToolBroker) else None)
     app.add_middleware(CorrelationMetricsMiddleware, metrics=request_metrics)
     app.include_router(create_auth_router(auth_service))
 
@@ -125,6 +128,49 @@ def create_app(
         user = require_authenticated_user(authorization, auth_service)
         limiter.check(user.user_id)
         return AuthenticatedPrincipal(user_id=user.user_id)
+
+    if broker is not None:
+        class LocalToolResultInput(BaseModel):
+            exit_code: int
+            stdout: str = Field(default="", max_length=64_000)
+            stderr: str = Field(default="", max_length=64_000)
+            duration_ms: float = 0
+
+        @app.get("/v1/local-tools/stream", tags=["local tools"])
+        async def stream_local_tools(
+            principal: AuthenticatedPrincipal = Depends(authenticate),
+        ) -> StreamingResponse:
+            if not broker.connect_helper(principal.user_id):
+                raise HTTPException(status_code=409, detail="A local helper is already connected for this account")
+
+            async def events():
+                try:
+                    while True:
+                        try:
+                            payload = await asyncio.wait_for(
+                                broker.next_call(principal.user_id), timeout=15
+                            )
+                        except TimeoutError:
+                            yield ": keep-alive\n\n"
+                            continue
+                        yield "event: tool_request\ndata: " + json.dumps(payload, separators=(",", ":")) + "\n\n"
+                finally:
+                    broker.disconnect_helper(principal.user_id)
+
+            return StreamingResponse(
+                events(), media_type="text/event-stream",
+                headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+            )
+
+        @app.post("/v1/local-tools/{call_id}/result", tags=["local tools"])
+        async def submit_local_tool_result(
+            call_id: str,
+            body: LocalToolResultInput,
+            principal: AuthenticatedPrincipal = Depends(authenticate),
+        ) -> dict[str, str]:
+            if not broker.submit_result(principal.user_id, call_id, body.model_dump()):
+                raise HTTPException(status_code=404, detail="Tool request is no longer pending")
+            return {"status": "accepted"}
 
     @app.get("/metrics", include_in_schema=False)
     async def prometheus_metrics() -> Response:

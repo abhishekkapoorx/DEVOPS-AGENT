@@ -1,46 +1,34 @@
 # DEVOPS-AGENT
 
-## Package layout
+The product has two runtime parts:
 
-The repository has three independently packageable modules:
+- **User machine:** a Python package with the CLI and local Tool Service helper. The helper runs commands and reads or edits files in the directory where `devops-agent` was started.
+- **Server:** one private backend with authentication, conversations, LangGraph, model prompts, and Postgres persistence.
 
-```text
-agent_protocol/  # shared validated wire messages
-agent_cli/       # local executor and WebSocket client shipped to users
-agent_server/    # cloud-side agent and FastAPI transport
-```
+The user package contains `agent_cli` and the small shared security module only. It does not package server agents, prompts, or orchestration code.
 
-Server-only implementation details live below `agent_server/`:
+## Install the user package
 
-```text
-agent_server/
-├── agents/       # provider and workflow agents
-├── tools/        # deployment, terminal, and handoff tools
-├── llms/         # server-side model configuration
-├── utils/        # context, planning, and shared server helpers
-└── indexing/     # optional Pinecone/Neo4j code indexing
-```
-
-Examples are grouped by deployment target under `examples/server/`. The
-root-level `dummy_projects/` directory is sample data for those examples;
-`vectordbs/` is reserved for local indexing data and is not part of either
-installed package.
-
-Install only the local CLI:
-
-```bash
+```powershell
 python -m pip install ".[cli]"
-devops-agent --help
+devops-agent --api-url https://your-agent.example
 ```
 
-Install the cloud-side transport:
+The CLI starts the local helper as a child process. Both use the same OS-stored login. Only one helper can be connected per account at a time so requests cannot be sent to the wrong workspace. Every shell command requires approval. File reads are limited to the launch directory; file writes and deletes require approval.
 
-```bash
-python -m pip install ".[server]"
-uvicorn agent_server.transport:app
+## Run the server locally
+
+```powershell
+docker compose up --build
 ```
 
-The old `server_agent` and `transport` import paths remain thin compatibility
-wrappers. New code should import from the package that owns the module. The
-CLI has no root-level compatibility package; use `devops-agent` or
-`python -m agent_cli`.
+Compose runs Postgres, migrations, and one API backend. The user’s workspace is never mounted into the server. Configure `.env` with the database URL, token secret, public URL, auth mode, model provider, and provider credentials.
+
+## Current boundaries
+
+- Supported local tool families: `aws`, `az`, `gcloud`, `kubectl`, `docker`, `git`, and `files`.
+- AWS and GCP specialist agents remain as source but are not registered. Setting `DEVOPS_AGENT_ENABLE_MCP_AGENTS=true` makes the server fail at startup because MCP support is future work.
+- The indexing and RAG code remains in the repository but is not imported or started by the active application.
+- The old WebSocket transport and server-hosted Tool Service have been removed.
+
+See [the current architecture spec](docs/specs/09-client-local-tool-service.md) and [local run guide](docs/local-run.md).

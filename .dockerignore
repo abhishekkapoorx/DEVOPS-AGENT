@@ -1,0 +1,9 @@
+agent_server/indexing/
+agent_server/utils/rag.py
+cocoindex-codebase-indexing.py
+vectordbs/
+**/__pycache__/
+**/*.py[cod]
+.git/
+.venv/
+tests/
