@@ -164,7 +164,7 @@ class AgentRunWorker:
                     )
                     return
                 if self.tool_executor is None:
-                    raise RuntimeError("Registered Tool Service is not configured")
+                    raise RuntimeError("Local Tool Service helper is not connected")
                 for call in result.tool_calls:
                     await self.runs.append_run_event(
                         run.user_id,
@@ -222,7 +222,7 @@ class AgentRunWorker:
         except Exception as exc:
             # Keep the client-facing run error generic, but preserve a sanitized
             # diagnostic in API logs so provider/configuration failures can be
-            # distinguished from persistence and tool-service failures.
+            # distinguished from persistence and local-helper failures.
             logger.error(
                 "Agent Run %s failed (%s): %s",
                 run.id,

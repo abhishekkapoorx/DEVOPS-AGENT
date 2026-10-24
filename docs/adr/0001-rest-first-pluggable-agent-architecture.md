@@ -1,8 +1,8 @@
 # REST-first pluggable agent architecture
 
-Status: accepted
+Status: superseded by [Spec 09](../specs/09-client-local-tool-service.md)
 
-The system will use a REST-first FastAPI backend, browser-assisted device authentication for the CLI, a Textual terminal UI, PostgreSQL-backed conversations and agent persistence, and SSE for long-running progress. The LangGraph implementation will be isolated behind a pluggable Agent Runtime interface so the API and persistence layers do not depend on LangGraph-specific implementation details. WebSockets are not the primary application contract and are deferred unless a later requirement needs bidirectional interaction.
+This record describes the earlier pluggable runtime design. The current architecture keeps LangGraph on the private backend and moves local command and file execution to the user's CLI helper; see Spec 09.
 
 ## Consequences
 

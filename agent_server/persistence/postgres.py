@@ -18,6 +18,7 @@ from sqlalchemy import (
     and_,
     or_,
     select,
+    update,
 )
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.exc import IntegrityError

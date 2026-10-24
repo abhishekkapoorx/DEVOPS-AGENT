@@ -44,8 +44,9 @@ Interactive execution:
 devops-agent --interactive
 ```
 
-Programmatic callers use `LocalExecutionClient.execute()` with an
-`ExecutionRequest` or a mapping containing `tool`, `args`, and optional `cwd`.
-Destructive operations return a denied result unless an explicit approval
-callback is supplied. Every execution can be sent to an audit sink, and
-secrets are redacted from results and audit records.
+The helper uses one `LocalToolExecutor.execute(name, arguments)` entry point.
+Each tool has its own implementation and receives named arguments, such as
+`files.list_files` with `{"path": "/workspace"}` or `git.command` with
+`{"argv": ["status"]}`. Shell commands require approval each time. The helper
+also keeps file access inside the launch directory, records audits, and
+redacts secrets from results.

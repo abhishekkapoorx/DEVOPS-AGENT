@@ -18,20 +18,20 @@ class AuditRecord:
     request_id: str
     tool: str
     action: str
-    operation: OperationClass
+    operation: OperationClass | None
     outcome: str
     started_at: float
     duration_ms: float
     details: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return redact_secrets({"execution_id": self.execution_id, "user_id": self.user_id, "session_id": self.session_id, "request_id": self.request_id, "tool": self.tool, "action": self.action, "operation": self.operation.value, "outcome": self.outcome, "started_at": self.started_at, "duration_ms": self.duration_ms, "details": self.details})
+        return redact_secrets({"execution_id": self.execution_id, "user_id": self.user_id, "session_id": self.session_id, "request_id": self.request_id, "tool": self.tool, "action": self.action, "operation": self.operation.value if self.operation else None, "outcome": self.outcome, "started_at": self.started_at, "duration_ms": self.duration_ms, "details": self.details})
 
 
 AuditSink = Callable[[AuditRecord], None]
 
 
-def new_record(*, user_id: str, session_id: str, request_id: str, tool: str, action: str, operation: OperationClass, outcome: str, started_at: float, duration_ms: float, details: dict[str, Any] | None = None) -> AuditRecord:
+def new_record(*, user_id: str, session_id: str, request_id: str, tool: str, action: str, operation: OperationClass | None, outcome: str, started_at: float, duration_ms: float, details: dict[str, Any] | None = None) -> AuditRecord:
     return AuditRecord(str(uuid4()), user_id, session_id, request_id, tool, action, operation, outcome, started_at, duration_ms, details or {})
 
 

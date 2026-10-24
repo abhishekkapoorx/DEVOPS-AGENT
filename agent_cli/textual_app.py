@@ -3,15 +3,19 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import shlex
+import subprocess
+import threading
 from typing import Any, Callable, Protocol
 
 from rich.markdown import Markdown
 from rich.text import Text
 from textual import work
 from textual.app import App, ComposeResult
+from textual.screen import ModalScreen
 from textual.containers import Vertical
-from textual.widgets import Footer, Header, Input, Static
+from textual.widgets import Button, Footer, Header, Input, Static
 
 from .auth import DeviceLogin, TokenResponse
 from .local_state import ConversationSelectionStore, JsonConversationSelectionStore
@@ -29,6 +33,26 @@ class ConversationClient(Protocol):
 Command = Callable[[str], Any]
 
 
+class ToolApprovalScreen(ModalScreen[bool]):
+    CSS = "ToolApprovalScreen { align: center middle; } #approval { width: 70; height: auto; border: round $accent; padding: 1 2; background: $panel; } #approval-buttons { height: 3; align: center middle; }"
+
+    def __init__(self, payload: dict[str, Any]) -> None:
+        super().__init__()
+        self.payload = payload
+
+    def compose(self) -> ComposeResult:
+        name = self.payload.get("name", "tool")
+        arguments = self.payload.get("arguments", {})
+        command = arguments.get("argv") if isinstance(arguments, dict) else None
+        details = " ".join(str(arg) for arg in command) if isinstance(command, list) else json.dumps(arguments, sort_keys=True)
+        yield Static(f"Approve local {name}?\n\n{details}", id="approval")
+        yield Button("Approve", variant="success", id="approve")
+        yield Button("Deny", variant="error", id="deny")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        self.dismiss(event.button.id == "approve")
+
+
 class TextualAgentApp(App[None]):
     TITLE = "DevOps Agent"
     SUB_TITLE = "Chat"
@@ -42,11 +66,14 @@ class TextualAgentApp(App[None]):
     BINDINGS = [("ctrl+c", "quit", "Quit")]
 
     def __init__(self, auth: DeviceLogin, client_factory,
-                 selection_store: ConversationSelectionStore | None = None) -> None:
+                 selection_store: ConversationSelectionStore | None = None,
+                 on_signed_in: Callable[[TokenResponse], None] | None = None) -> None:
         super().__init__()
         self.auth = auth
         self.client_factory = client_factory
         self.selection_store = selection_store
+        self.on_signed_in = on_signed_in
+        self._local_helper: subprocess.Popen | None = None
         self.client: ConversationClient | None = None
         self.conversations: list[dict[str, Any]] = []
         self.selected_conversation_id: str | None = None
@@ -91,7 +118,46 @@ class TextualAgentApp(App[None]):
 
     def _activate(self, tokens: TokenResponse) -> None:
         self.client = self.client_factory(tokens)
-        self.query_one("#status", Static).update(f"Signed in as {tokens.user_id}")
+        if self.on_signed_in is not None:
+            helper = self.on_signed_in(tokens)
+            if isinstance(helper, subprocess.Popen):
+                self._local_helper = helper
+                threading.Thread(target=self._watch_helper, daemon=True).start()
+
+    def _watch_helper(self) -> None:
+        process = self._local_helper
+        if process is None or process.stdout is None:
+            return
+        for line in process.stdout:
+            try:
+                event = json.loads(line)
+            except ValueError:
+                continue
+            if event.get("type") == "approval_request":
+                self.call_from_thread(self._show_tool_approval, event)
+            elif event.get("type") == "helper_error":
+                self.call_from_thread(self._show_helper_error, event)
+
+    def _show_helper_error(self, payload: dict[str, Any]) -> None:
+        message = str(payload.get("message", "Local helper connection interrupted"))
+        message = message[:500]
+        self.query_one("#status", Static).update(message)
+        self._mount_system_message(f"Local helper: {message}")
+
+    def _show_tool_approval(self, payload: dict[str, Any]) -> None:
+        self.push_screen(
+            ToolApprovalScreen(payload),
+            lambda approved: self._reply_tool_approval(bool(approved)),
+        )
+
+    def _reply_tool_approval(self, approved: bool) -> None:
+        process = self._local_helper
+        if process is None or process.stdin is None or process.poll() is not None:
+            return
+        process.stdin.write(json.dumps({"approved": approved}) + "\n")
+        process.stdin.flush()
+        message = "Approval sent to local helper" if approved else "Tool request denied"
+        self.query_one("#status", Static).update(message)
 
     async def _open_initial_chat(self) -> None:
         assert self.client is not None
@@ -282,8 +348,8 @@ class TextualAgentApp(App[None]):
             self._assistant_bubble.update(Markdown(content))
 
 
-def run_textual_app(auth: DeviceLogin, client_factory) -> None:
-    TextualAgentApp(auth, client_factory, JsonConversationSelectionStore()).run()
+def run_textual_app(auth: DeviceLogin, client_factory, on_signed_in=None) -> None:
+    TextualAgentApp(auth, client_factory, JsonConversationSelectionStore(), on_signed_in).run()
 
 
 __all__ = ["ConversationClient", "TextualAgentApp", "run_textual_app"]

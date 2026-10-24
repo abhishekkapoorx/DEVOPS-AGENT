@@ -15,7 +15,6 @@ from .K8sAgent import agent as k8s_agent
 
 builder_pre_model_hook = build_combined_pre_model_hook(
     model=DEFAULT_MODEL,
-    rag_retriever=None,
     trim_kwargs={
         "max_messages": 5,
         "summarize_old": True,
