@@ -1,73 +1,115 @@
 import json
-from pathlib import Path
 
 import pytest
 
-from agent_cli.executor import CommandExecutor, ExecutionRequest, ExecutionResult, UnsupportedToolError
 from agent_cli.__main__ import main
+from agent_cli.executor import ExecutionResult, LocalToolExecutor
 
 
-def test_execution_request_accepts_supported_cli_and_serializes_result():
-    request = ExecutionRequest(tool="docker", args=("ps", "-a"))
-    assert request.tool == "docker"
-    assert request.args == ("ps", "-a")
-    result = ExecutionResult("docker", ("ps", "-a"), 0, "container-id\n", "", 12.5)
-    assert json.loads(result.to_json()) == {"tool": "docker", "args": ["ps", "-a"], "exit_code": 0, "stdout": "container-id\n", "stderr": "", "duration_ms": 12.5}
-
-
-def test_executor_uses_argv_and_returns_complete_result():
+def test_command_execution_uses_argv_without_a_shell(tmp_path):
     calls = []
+
     def runner(command, *, cwd, env, shell):
         calls.append((command, cwd, env, shell))
         return 7, "output", "warning"
-    result = CommandExecutor(runner=runner).execute(ExecutionRequest(tool="git", args=("status",), cwd="."))
+
+    result = LocalToolExecutor(
+        runner=runner,
+        approval_callback=lambda *_: True,
+        workspace=tmp_path,
+    ).execute("git.command", {"argv": ["status"], "cwd": None})
+
     assert result.exit_code == 7
     assert result.stdout == "output"
     assert result.stderr == "warning"
-    assert calls == [(('git', 'status'), str(Path.cwd()), None, False)]
+    assert calls == [(('git', 'status'), str(tmp_path), None, False)]
 
 
-def test_shell_requests_are_rejected():
-    with pytest.raises(UnsupportedToolError):
-        ExecutionRequest(tool="shell", args=("echo hello",))
-
-
-def test_unsupported_tools_fail_before_process_execution():
-    with pytest.raises(UnsupportedToolError):
-        CommandExecutor(runner=lambda *args, **kwargs: pytest.fail("must not run")).execute(ExecutionRequest(tool="python", args=("--version",)))
-
-
-def test_destructive_operations_require_explicit_approval():
+def test_commands_require_approval_and_are_not_run_when_denied(tmp_path):
     calls = []
-    runner = lambda *args, **kwargs: calls.append((args, kwargs)) or (0, "", "")
-    denied = CommandExecutor(runner=runner).execute(ExecutionRequest(tool="git", args=("reset", "--hard")))
-    assert denied.exit_code == 403
-    assert denied.approved is False
+    executor = LocalToolExecutor(
+        runner=lambda *args, **kwargs: calls.append((args, kwargs)) or (0, "", ""),
+        workspace=tmp_path,
+    )
+
+    result = executor.execute("git.command", {"argv": ["status"], "cwd": None})
+
+    assert result.exit_code == 403
+    assert result.approved is False
     assert calls == []
-    approved = CommandExecutor(runner=runner, approval_callback=lambda request, operation: True).execute(ExecutionRequest(tool="git", args=("reset", "--hard")))
-    assert approved.exit_code == 0
-    assert calls[0][0][0] == ("git", "reset", "--hard")
+
+
+def test_command_runs_after_explicit_approval(tmp_path):
+    calls = []
+    executor = LocalToolExecutor(
+        runner=lambda command, **kwargs: calls.append((command, kwargs)) or (0, "clean", ""),
+        approval_callback=lambda _name, _arguments, _operation: True,
+        workspace=tmp_path,
+    )
+
+    result = executor.execute("git.command", {"argv": ["status"], "cwd": None})
+
+    assert result.exit_code == 0
+    assert result.approved is True
+    assert calls[0][0] == ("git", "status")
     assert calls[0][1]["shell"] is False
 
 
-def test_unknown_actions_fail_closed():
-    with pytest.raises(ValueError, match="Unknown or unauthorized"):
-        CommandExecutor(runner=lambda *args, **kwargs: pytest.fail("must not run")).execute(ExecutionRequest(tool="git", args=("run_arbitrary",)))
+def test_unsupported_or_invalid_tool_calls_fail_before_execution(tmp_path):
+    executor = LocalToolExecutor(
+        runner=lambda *args, **kwargs: pytest.fail("must not run"), workspace=tmp_path
+    )
+
+    unsupported = executor.execute("python.command", {"argv": ["--version"], "cwd": None})
+    malformed = executor.execute("git.command", {"argv": "status", "cwd": None})
+
+    assert unsupported.exit_code == 2
+    assert malformed.exit_code == 2
 
 
-def test_command_output_is_redacted():
-    result = CommandExecutor(runner=lambda *args, **kwargs: (0, "TOKEN=secret-value", "Bearer abc")).execute(ExecutionRequest(tool="git", args=("status",)))
-    assert "secret-value" not in result.stdout
-    assert "abc" not in result.stderr
+def test_command_working_directory_cannot_escape_workspace(tmp_path):
+    executor = LocalToolExecutor(
+        runner=lambda *args, **kwargs: pytest.fail("must not run"),
+        approval_callback=lambda *_: True,
+        workspace=tmp_path,
+    )
+
+    result = executor.execute(
+        "git.command", {"argv": ["status"], "cwd": "../outside"}
+    )
+
+    assert result.exit_code == 2
+    assert "outside the local client workspace" in result.stderr
 
 
-def test_cli_one_shot_mode_returns_zero(monkeypatch, capsys):
+def test_result_redacts_secrets_and_bounds_output():
+    result = LocalToolExecutor(
+        runner=lambda *args, **kwargs: (0, "TOKEN=secret-value" + "x" * 70_000, "Bearer abc"),
+        approval_callback=lambda *_: True,
+    ).execute("git.command", {"argv": ["status"], "cwd": None})
+
+    serialized = json.loads(result.to_json())
+    assert "secret-value" not in serialized["stdout"]
+    assert "abc" not in serialized["stderr"]
+    assert len(serialized["stdout"]) <= 64_000
+
+
+def test_cli_one_shot_mode_uses_named_local_tool_arguments(monkeypatch, capsys):
+    calls = []
+
     class FakeExecutor:
-        def execute(self, request):
-            return ExecutionResult(request.tool, request.args, 0, "ok", "", 1.0)
-    monkeypatch.setattr("agent_cli.__main__.CommandExecutor", FakeExecutor)
+        def __init__(self, **_kwargs):
+            pass
+
+        def execute(self, name, arguments):
+            calls.append((name, arguments))
+            return ExecutionResult(name, arguments, 0, "ok", "", 1.0)
+
+    monkeypatch.setattr("agent_cli.__main__.LocalToolExecutor", FakeExecutor)
+
     assert main(["--tool", "git", "status"]) == 0
-    assert '"exit_code": 0' in capsys.readouterr().out
+    assert calls == [("git.command", {"argv": ["status"]})]
+    assert json.loads(capsys.readouterr().out)["exit_code"] == 0
 
 
 def test_cli_rest_mode_streams_progress_before_final_result(monkeypatch, capsys):
