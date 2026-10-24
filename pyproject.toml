@@ -27,3 +27,6 @@ devops-agent-tools = "agent_cli.tool_service:main"
 [tool.setuptools.packages.find]
 include = ["agent_protocol*", "agent_cli*"]
 
+[tool.setuptools.package-data]
+agent_cli = ["bin/*/*.exe", "bin/*/LICENSE*", "bin/*/UNLICENSE*"]
+
