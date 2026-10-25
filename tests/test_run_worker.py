@@ -257,6 +257,9 @@ async def test_worker_persists_streaming_model_and_redacted_tool_events():
     assert "secret-value" not in stream
     assert "never-show-this" not in stream
     assert "[REDACTED]" in stream
+    completed_tool_event = next(event for event in events if event.event_type == "tool_call_completed")
+    assert completed_tool_event.data["result"]["output"]["branch"] == "main"
+    assert completed_tool_event.data["result"]["output"]["token"] == "[REDACTED]"
 
 
 @pytest.mark.asyncio
