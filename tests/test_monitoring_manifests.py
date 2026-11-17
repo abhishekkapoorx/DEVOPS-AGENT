@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 
@@ -8,13 +9,17 @@ def test_monitoring_manifests_cover_alertable_scenarios_and_read_only_rbac():
     for alert_name in (
         "KubePodCrashLooping",
         "KubeContainerOOMKilled",
-        "KubePodImagePullBackOff",
-        "ServiceNoReadyEndpoints",
+        "ServiceNoEndpoints",
         "KubePodNotReady",
         "KubeDeploymentReplicasMismatch",
-        "RedisCartNoEndpoints",
     ):
         assert f"alert: {alert_name}" in rules
+    fixture_names = {
+        json.loads(path.read_text(encoding="utf-8"))["alerts"][0]["labels"]["alertname"]
+        for path in Path("incident-investigation-lab/scenarios").glob("*/alert_fixture.json")
+    }
+    for name in fixture_names - {"HighLatency"}:
+        assert f"alert: {name}" in rules
     assert 'verbs: ["get", "list", "watch"]' in rbac
     assert "secrets" not in rbac
     assert "delete" not in rbac

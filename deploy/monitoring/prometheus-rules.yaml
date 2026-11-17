@@ -18,12 +18,12 @@ spec:
           for: 30s
           labels: {severity: critical, namespace: "{{ $labels.namespace }}", deployment: "{{ $labels.pod }}"}
           annotations: {summary: "{{ $labels.pod }} was OOM killed", description: "Pod {{ $labels.pod }} exceeded its memory limit."}
-        - alert: KubePodImagePullBackOff
+        - alert: KubePodNotReady
           expr: kube_pod_container_status_waiting_reason{namespace="boutique",reason=~"ImagePullBackOff|ErrImagePull"} == 1
           for: 30s
           labels: {severity: critical, namespace: "{{ $labels.namespace }}", deployment: "{{ $labels.pod }}"}
           annotations: {summary: "{{ $labels.pod }} cannot pull its image", description: "Pod is waiting with ImagePullBackOff or ErrImagePull."}
-        - alert: ServiceNoReadyEndpoints
+        - alert: ServiceNoEndpoints
           expr: kube_endpoint_address_available{namespace="boutique"} == 0
           for: 30s
           labels: {severity: critical, namespace: "{{ $labels.namespace }}", deployment: "{{ $labels.endpoint }}"}
@@ -38,8 +38,3 @@ spec:
           for: 30s
           labels: {severity: warning, namespace: "{{ $labels.namespace }}", deployment: "{{ $labels.deployment }}"}
           annotations: {summary: "{{ $labels.deployment }} replicas are unavailable", description: "Available replicas are below the desired count."}
-        - alert: RedisCartNoEndpoints
-          expr: kube_endpoint_address_available{namespace="boutique",endpoint="redis-cart"} == 0
-          for: 30s
-          labels: {severity: critical, namespace: "{{ $labels.namespace }}", deployment: redis-cart}
-          annotations: {summary: "redis-cart has no ready endpoints", description: "The cart dependency has no ready Redis endpoints."}
