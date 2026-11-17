@@ -89,6 +89,24 @@ def test_redaction_covers_bearer_jwt_and_private_key():
     assert "secret" not in result
 
 
+def test_structured_redaction_covers_secret_keys_urls_and_long_blobs():
+    from agent_server.investigations.redaction import redact
+
+    value = redact(
+        {
+            "AWS_ACCESS_KEY_ID": "AKIAIOSFODNN7EXAMPLE",
+            "PASSWORD": "hunter2",
+            "url": "postgresql://user:password@example.test/db",
+            "blob": "A" * 80,
+        }
+    )
+
+    assert value["AWS_ACCESS_KEY_ID"] in {"[REDACTED]", "[REDACTED_AWS_KEY]"}
+    assert value["PASSWORD"] == "[REDACTED]"
+    assert "password" not in value["url"]
+    assert "REDACTED_TOKEN" in value["blob"]
+
+
 def test_kubernetes_collectors_contain_no_write_operations():
     forbidden = {"exec", "connect", "scale"}
     violations = []

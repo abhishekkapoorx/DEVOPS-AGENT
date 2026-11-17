@@ -9,6 +9,7 @@ import signal
 from agent_server.investigations.worker import InvestigationWorker
 from agent_server.investigations.runner import InvestigationRunner
 from agent_server.investigations.slack import SlackPoster
+from agent_server.investigations.llm import LLMBudget, client_from_environment
 from agent_server.persistence.postgres import create_session_factory
 
 
@@ -23,7 +24,17 @@ async def _main() -> None:
         except NotImplementedError:
             pass
     try:
-        runner = InvestigationRunner(sessions, slack=SlackPoster())
+        budget = LLMBudget(
+            max_tokens=int(os.getenv("LLM_MAX_TOKENS", "2000")),
+            max_cost_usd=float(os.getenv("LLM_MAX_COST_USD", "0.25")),
+            timeout_seconds=float(os.getenv("LLM_TIMEOUT_SECONDS", "30")),
+        )
+        runner = InvestigationRunner(
+            sessions,
+            slack=SlackPoster(),
+            llm_client=client_from_environment(),
+            llm_budget=budget,
+        )
         await InvestigationWorker(sessions, runner).run_forever(stopping)
     finally:
         await engine.dispose()

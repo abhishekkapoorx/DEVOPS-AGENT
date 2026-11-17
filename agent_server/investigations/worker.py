@@ -118,7 +118,8 @@ class InvestigationWorker:
             )
             if row is None:
                 return
-            row.status = "closed" if row.resolved_at is not None else "completed"
+            if row.status != "completed_degraded":
+                row.status = "closed" if row.resolved_at is not None else "completed"
             row.locked_by = None
             row.locked_at = None
             row.updated_at = now

@@ -36,6 +36,7 @@ class Settings:
     development_user_id: str
     model_provider: str
     model_name: str
+    model_base_url: str | None
     webhook_token: str | None
 
     @classmethod
@@ -85,6 +86,7 @@ class Settings:
             development_user_id=os.getenv("DEVOPS_AGENT_DEVELOPMENT_USER_ID", "developer"),
             model_provider=provider,
             model_name=os.getenv("DEVOPS_AGENT_MODEL_NAME", "gpt-4o-mini"),
+            model_base_url=os.getenv("DEVOPS_AGENT_MODEL_BASE_URL") or None,
             webhook_token=os.getenv("WEBHOOK_TOKEN") or None,
         )
 
@@ -111,7 +113,10 @@ def _runtime(settings: Settings, model: Any | None = None) -> Any:
 def _model(settings: Settings) -> Any:
     if settings.model_provider == "openai":
         from langchain_openai import ChatOpenAI
-        return ChatOpenAI(model=settings.model_name)
+        kwargs = {"model": settings.model_name}
+        if settings.model_base_url:
+            kwargs["base_url"] = settings.model_base_url
+        return ChatOpenAI(**kwargs)
     if settings.model_provider == "groq":
         from langchain_groq import ChatGroq
         return ChatGroq(model=settings.model_name)

@@ -170,6 +170,8 @@ class InvestigationRow(Base):
     run_after: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     slack_posted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    result: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    verifier_report: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
@@ -237,6 +239,24 @@ class InvestigationEvidenceRow(Base):
     raw: Mapped[dict | list | str | None] = mapped_column(JSONB, nullable=True)
     truncated: Mapped[bool] = mapped_column(default=False)
     content_hash: Mapped[str] = mapped_column(String(64))
+
+
+class InvestigationRunRow(Base):
+    __tablename__ = "investigation_runs"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: uuid4().hex)
+    investigation_id: Mapped[str] = mapped_column(
+        ForeignKey("investigations.id", ondelete="CASCADE"), index=True
+    )
+    model: Mapped[str] = mapped_column(String(255))
+    prompt_hash: Mapped[str] = mapped_column(String(64))
+    tokens_in: Mapped[int] = mapped_column(BigInteger, default=0)
+    tokens_out: Mapped[int] = mapped_column(BigInteger, default=0)
+    cost_usd: Mapped[float] = mapped_column(default=0)
+    latency_ms: Mapped[float] = mapped_column(default=0)
+    tool_call_count: Mapped[int] = mapped_column(BigInteger, default=0)
+    outcome: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 def create_session_factory(database_url: str) -> tuple[Any, async_sessionmaker[AsyncSession]]:

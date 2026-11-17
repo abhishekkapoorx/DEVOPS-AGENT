@@ -11,6 +11,8 @@ from typing import Any
 import httpx
 
 from agent_server.investigations.evidence import ContextPack
+from agent_server.investigations.confidence import Confidence
+from agent_server.investigations.hypotheses import Hypothesis, VerifierReport
 from agent_server.investigations.redaction import redact_text
 
 
@@ -49,6 +51,43 @@ def build_deterministic_briefing(
             "READ-ONLY analysis. No actions were taken.",
         ]
     )
+    return _limit_message(redact_text("\n".join(lines)))
+
+
+def build_analyzed_briefing(
+    pack: ContextPack,
+    ranked: list[tuple[Hypothesis, Confidence]],
+    verifier: VerifierReport,
+    *,
+    occurrence_count: int = 1,
+) -> str:
+    lines = [
+        f"*Incident investigation: {pack.alertname}*",
+        "Status: Analyzed",
+        f"Workload: {pack.workload or 'unknown'} | Namespace: {pack.namespace or 'unknown'} | Severity: {pack.severity}",
+        f"Summary: {pack.summary}",
+        f"Occurrences: {occurrence_count}",
+        "",
+        "*Ranked hypotheses*",
+    ]
+    for index, (hypothesis, confidence) in enumerate(ranked[:3], 1):
+        lines.append(f"{index}. {hypothesis.title} — {confidence.level} confidence ({'; '.join(confidence.reasons)})")
+        for claim in hypothesis.claims:
+            ids = ", ".join(claim.evidence_ids)
+            lines.append(f"   - {claim.text} [{ids}]")
+        for check in hypothesis.suggested_next_checks:
+            lines.append(f"   - Next read-only check: {check}")
+    lines.extend(
+        [
+            "",
+            f"Verifier: kept {verifier.claims_kept}/{verifier.claims_total} claims; grounded rate {verifier.grounded_claim_rate:.0%}; dropped {verifier.claims_dropped}.",
+            "*Evidence index*",
+        ]
+    )
+    lines.extend(f"[{item.id}] {item.summary}" for item in pack.evidence)
+    if pack.collection_errors:
+        lines.append("Collection errors: " + "; ".join(f"{item['tool']}={item['error']}" for item in pack.collection_errors))
+    lines.append("READ-ONLY analysis. No actions were taken.")
     return _limit_message(redact_text("\n".join(lines)))
 
 
@@ -95,6 +134,11 @@ class SlackPoster:
             logger.info("Slack webhook is unset; deterministic briefing:\n%s", message)
             return False
 
+        return await self.post_text(message)
+
+    async def post_text(self, message: str) -> bool:
+        """Deliver an already-rendered, redacted briefing with retry policy."""
+
         client = self.client_factory() if self.client_factory else httpx.AsyncClient(timeout=10)
         owns_client = self.client_factory is None
         try:
@@ -115,4 +159,10 @@ class SlackPoster:
                 await client.aclose()
 
 
-__all__ = ["SLACK_LIMIT", "SlackDeliveryError", "SlackPoster", "build_deterministic_briefing"]
+__all__ = [
+    "SLACK_LIMIT",
+    "SlackDeliveryError",
+    "SlackPoster",
+    "build_analyzed_briefing",
+    "build_deterministic_briefing",
+]
