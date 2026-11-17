@@ -44,6 +44,13 @@ test = [
 devops-agent = "agent_cli.__main__:main"
 devops-agent-tools = "agent_cli.tool_service:main"
 
+[tool.pytest.ini_options]
+markers = [
+    "postgres: requires TEST_DATABASE_URL and a disposable PostgreSQL database",
+    "kind: requires a live kind Kubernetes cluster",
+    "live_llm: requires configured live LLM credentials",
+]
+
 [tool.setuptools.packages.find]
 include = ["agent_protocol*", "agent_cli*"]
 

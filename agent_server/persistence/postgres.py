@@ -16,6 +16,7 @@ from sqlalchemy import (
     Text,
     text,
     UniqueConstraint,
+    CheckConstraint,
     and_,
     or_,
     select,
@@ -132,6 +133,110 @@ class RawWebhookRow(Base):
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     headers: Mapped[dict] = mapped_column(JSONB)
     body: Mapped[dict] = mapped_column(JSONB)
+
+
+class InvestigationRow(Base):
+    __tablename__ = "investigations"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'running', 'completed', 'completed_degraded', 'failed', 'closed')",
+            name="ck_investigations_status",
+        ),
+        Index(
+            "uq_investigations_open_fingerprint",
+            "fingerprint",
+            unique=True,
+            postgresql_where=text(
+                "status IN ('pending', 'running', 'completed', 'completed_degraded')"
+            ),
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: uuid4().hex)
+    fingerprint: Mapped[str] = mapped_column(String(64), index=True)
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    alertname: Mapped[str] = mapped_column(String(255))
+    namespace: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    workload: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    severity: Mapped[str] = mapped_column(String(64))
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    occurrence_count: Mapped[int] = mapped_column(BigInteger, default=1)
+    attempt_count: Mapped[int] = mapped_column(BigInteger, default=0)
+    max_attempts: Mapped[int] = mapped_column(BigInteger, default=3)
+    locked_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    run_after: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    slack_posted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class AlertRow(Base):
+    __tablename__ = "alerts"
+    __table_args__ = (
+        UniqueConstraint("delivery_key", name="uq_alerts_delivery_key"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: uuid4().hex)
+    fingerprint: Mapped[str] = mapped_column(String(64), index=True)
+    delivery_key: Mapped[str] = mapped_column(String(64), unique=True)
+    source: Mapped[str] = mapped_column(String(64), index=True)
+    source_fingerprint: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    alertname: Mapped[str] = mapped_column(String(255))
+    severity: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    namespace: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    workload: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    pod: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    summary: Mapped[str] = mapped_column(Text)
+    description: Mapped[str] = mapped_column(Text)
+    labels: Mapped[dict] = mapped_column(JSONB)
+    annotations: Mapped[dict] = mapped_column(JSONB)
+    raw: Mapped[dict] = mapped_column(JSONB)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    investigation_id: Mapped[str | None] = mapped_column(
+        ForeignKey("investigations.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+
+
+class AuditLogRow(Base):
+    __tablename__ = "audit_log"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: uuid4().hex)
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    actor: Mapped[str] = mapped_column(String(128))
+    action: Mapped[str] = mapped_column(String(128), index=True)
+    object_type: Mapped[str] = mapped_column(String(128))
+    object_id: Mapped[str] = mapped_column(String(128), index=True)
+    details: Mapped[dict] = mapped_column(JSONB)
+
+
+class InvestigationEvidenceRow(Base):
+    __tablename__ = "investigation_evidence"
+    __table_args__ = (
+        UniqueConstraint(
+            "investigation_id", "source", "query_hash", name="uq_investigation_evidence_query"
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: uuid4().hex)
+    investigation_id: Mapped[str] = mapped_column(
+        ForeignKey("investigations.id", ondelete="CASCADE"), index=True
+    )
+    source: Mapped[str] = mapped_column(String(128), index=True)
+    query: Mapped[str] = mapped_column(Text)
+    query_hash: Mapped[str] = mapped_column(String(64))
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    summary: Mapped[str] = mapped_column(Text)
+    raw_ref: Mapped[str] = mapped_column(String(255))
+    raw: Mapped[dict | list | str | None] = mapped_column(JSONB, nullable=True)
+    truncated: Mapped[bool] = mapped_column(default=False)
+    content_hash: Mapped[str] = mapped_column(String(64))
 
 
 def create_session_factory(database_url: str) -> tuple[Any, async_sessionmaker[AsyncSession]]:
