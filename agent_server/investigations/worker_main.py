@@ -7,6 +7,8 @@ import os
 import signal
 
 from agent_server.investigations.worker import InvestigationWorker
+from agent_server.investigations.runner import InvestigationRunner
+from agent_server.investigations.slack import SlackPoster
 from agent_server.persistence.postgres import create_session_factory
 
 
@@ -21,7 +23,8 @@ async def _main() -> None:
         except NotImplementedError:
             pass
     try:
-        await InvestigationWorker(sessions).run_forever(stopping)
+        runner = InvestigationRunner(sessions, slack=SlackPoster())
+        await InvestigationWorker(sessions, runner).run_forever(stopping)
     finally:
         await engine.dispose()
 
