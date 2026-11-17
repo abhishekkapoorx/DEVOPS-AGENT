@@ -1,0 +1,25 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: incident-investigation-scenarios
+  namespace: boutique
+spec:
+  groups:
+    - name: incident-investigation-lab
+      rules:
+        - alert: KubePodCrashLooping
+          expr: kube_pod_container_status_waiting_reason{reason="CrashLoopBackOff",namespace="boutique"} == 1
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "{{ $labels.pod }} is crash looping"
+            description: "Pod {{ $labels.pod }} is in CrashLoopBackOff."
+        - alert: KubePodOOMKilled
+          expr: kube_pod_container_status_last_terminated_reason{reason="OOMKilled",namespace="boutique"} == 1
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "{{ $labels.pod }} was OOM killed"
+            description: "Pod {{ $labels.pod }} was terminated because it exceeded its memory limit."

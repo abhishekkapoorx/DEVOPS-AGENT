@@ -127,6 +127,30 @@ class RestAgentClient:
             raise RestApiError(502, "Agent API returned an invalid message list")
         return response
 
+    def list_conversation_events(self, conversation_id: str) -> list[dict[str, Any]]:
+        """Read the full persisted conversation timeline in stable sequence order."""
+        events: list[dict[str, Any]] = []
+        after = 0
+        while True:
+            query = urllib.parse.urlencode({"after": after, "limit": 500})
+            path = (
+                f"/v1/conversations/{urllib.parse.quote(conversation_id, safe='')}"
+                f"/events?{query}"
+            )
+            page = self._json_request("GET", path)
+            if not isinstance(page, list) or any(not isinstance(item, dict) for item in page):
+                raise RestApiError(502, "Agent API returned an invalid conversation event list")
+            if not page:
+                break
+            events.extend(page)
+            last_sequence = page[-1].get("sequence")
+            if not isinstance(last_sequence, int) or last_sequence <= after:
+                raise RestApiError(502, "Agent API returned an invalid conversation event cursor")
+            after = last_sequence
+            if len(page) < 500:
+                break
+        return events
+
     def cancel_run(self, run_id: str) -> dict[str, Any]:
         response = self._json_request(
             "DELETE", f"/v1/runs/{urllib.parse.quote(run_id, safe='')}"

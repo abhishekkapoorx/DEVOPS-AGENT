@@ -75,6 +75,83 @@ class FakeClient:
             {"role": "assistant", "content": "**Previously done**"},
         ]
 
+    def list_conversation_events(self, conversation_id):
+        return [
+            {
+                "sequence": 1,
+                "run_id": "run-older",
+                "type": "user_message",
+                "data": {"role": "user", "content": f"history for {conversation_id}"},
+            },
+            {
+                "sequence": 2,
+                "run_id": "run-older",
+                "type": "tool_call_started",
+                "data": {"call_id": "old-call", "name": "git.status"},
+            },
+            {
+                "sequence": 3,
+                "run_id": "run-older",
+                "type": "tool_call_completed",
+                "data": {
+                    "call_id": "old-call",
+                    "name": "git.status",
+                    "status": "succeeded",
+                    "result": {"output": {"branch": "main"}},
+                },
+            },
+            {
+                "sequence": 4,
+                "run_id": "run-older",
+                "type": "subagent_started",
+                "data": {
+                    "namespace": ["security_agent:task-9"],
+                    "name": "security_agent",
+                },
+            },
+            {
+                "sequence": 5,
+                "run_id": "run-older",
+                "type": "subagent_update",
+                "data": {
+                    "namespace": ["security_agent:task-9"],
+                    "node": "inspect_rules",
+                    "updated_keys": ["finding_count"],
+                },
+            },
+            {
+                "sequence": 6,
+                "run_id": "run-older",
+                "type": "agent_delta",
+                "data": {
+                    "namespace": ["security_agent:task-9"],
+                    "text": "Found two findings",
+                },
+            },
+            {
+                "sequence": 7,
+                "run_id": "run-older",
+                "type": "subagent_completed",
+                "data": {
+                    "namespace": ["security_agent:task-9"],
+                    "name": "security_agent",
+                    "status": "completed",
+                },
+            },
+            {
+                "sequence": 8,
+                "run_id": "run-older",
+                "type": "graph_step",
+                "data": {"node": "inspect", "result": {"findings": 2}},
+            },
+            {
+                "sequence": 9,
+                "run_id": "run-older",
+                "type": "assistant_message",
+                "data": {"role": "assistant", "content": "**Previously done**"},
+            },
+        ]
+
     def ask(self, message, *, conversation_id=None, on_event=None):
         self.sent.append((message, conversation_id))
         for conversation in self.conversations:
@@ -362,6 +439,41 @@ async def test_chat_text_can_be_selected_with_mouse_and_copied_with_ctrl_c():
         await pilot.press("ctrl+c")
 
         assert "history for" in app.clipboard
+
+
+@pytest.mark.asyncio
+async def test_resumed_chat_restores_persisted_tool_call_and_output_inline():
+    app = TextualAgentApp(
+        FakeAuth(tokens=token()),
+        lambda _tokens: FakeClient(),
+        FakeSelectionStore(selected="conversation-1"),
+    )
+
+    async with app.run_test(size=(110, 40)) as pilot:
+        await pilot.pause(0.2)
+        card = app.query_one("#tool-old-call")
+        assert "git.status" in render_widget(app.query_one("#tool-old-call .tool-name", Static))
+        assert "succeeded" in render_widget(app.query_one("#tool-old-call .tool-status", Static))
+        card.action_activate()
+        output = app.query_one("#tool-old-call .tool-activity-preview", Static)
+        assert '"branch": "main"' in output.content.plain
+        subagent = app.query_one("#tool-subagent-security_agent_task-9")
+        assert "security_agent" in render_widget(
+            app.query_one("#tool-subagent-security_agent_task-9 .tool-name", Static)
+        )
+        assert "completed" in render_widget(
+            app.query_one("#tool-subagent-security_agent_task-9 .tool-status", Static)
+        )
+        subagent_preview = app.query_one(
+            "#tool-subagent-security_agent_task-9 .tool-activity-preview", Static
+        )
+        assert "Found two findings" in subagent_preview.content.plain
+        graph_step = app.query_one("#tool-graph-step-run-older-inspect")
+        graph_step.action_activate()
+        graph_preview = app.query_one(
+            "#tool-graph-step-run-older-inspect .tool-activity-preview", Static
+        )
+        assert '"findings": 2' in graph_preview.content.plain
 
 
 def test_copy_and_export_shortcuts_are_hidden_from_footer():

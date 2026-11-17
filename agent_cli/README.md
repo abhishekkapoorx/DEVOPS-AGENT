@@ -24,8 +24,10 @@ keyboard shortcuts to create or change chats and log out. Copy-chat and export
 remain available through Ctrl+Alt+C and Ctrl+Alt+E, but are hidden from the
 footer. Chat text can be selected with the mouse and the selection copied with
 Ctrl+C. Export writes the persisted conversation transcript as readable plain
-text. The app remembers the selected conversation ID locally;
-conversation messages remain on the backend. A new chat remains a local draft
+text. Reopening a conversation restores its ordered messages, tool calls and
+results, and sub-agent activity from the backend event history. The app
+remembers the selected conversation ID locally; history remains on the backend.
+A new chat remains a local draft
 until the first non-empty prompt is sent. The server generates a title from the
 first prompt for new chats with the default title; generated titles are limited
 to 10 words. A title supplied with `/new <title>` is kept as entered.

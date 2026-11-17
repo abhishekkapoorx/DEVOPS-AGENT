@@ -6,6 +6,8 @@ import asyncio
 from dataclasses import dataclass
 import hashlib
 import json
+import logging
+import os
 import re
 from typing import Callable
 from contextlib import asynccontextmanager
@@ -23,8 +25,12 @@ from agent_server.run_worker import AgentRunWorker
 from agent_server.conversation_titles import ConversationTitleGenerator
 from agent_server.local_tool_broker import LocalToolBroker
 from .auth_routes import create_auth_router
+from .webhook import create_webhook_router
 from agent_server.observability import CorrelationMetricsMiddleware, HttpMetrics, InMemoryRateLimiter
 from .security import require_authenticated_user
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -82,6 +88,15 @@ class RunEventOutput(BaseModel):
     created_at: str
 
 
+class ConversationEventOutput(BaseModel):
+    id: str
+    sequence: int
+    run_id: str | None
+    type: str
+    data: dict[str, object]
+    created_at: str
+
+
 def create_app(
     *,
     runtime: AgentRuntime,
@@ -96,9 +111,13 @@ def create_app(
     rate_limiter: InMemoryRateLimiter | None = None,
     metrics: HttpMetrics | None = None,
     database_engine=None,
+    database_sessions=None,
+    webhook_token: str | None = None,
+    webhook_ingest_alerts=None,
 ) -> FastAPI:
     """Create an API with auth and storage adapters supplied by deployment."""
 
+    webhook_token = webhook_token if webhook_token is not None else os.getenv("WEBHOOK_TOKEN") or None
     worker = run_worker or AgentRunWorker(
         runtime=runtime,
         conversations=conversations,
@@ -129,9 +148,18 @@ def create_app(
     app.state.runs = runs
     app.state.conversations = conversations
     app.state.run_worker = worker
+    if webhook_token is None:
+        logger.warning("WEBHOOK_TOKEN is unset; Alertmanager webhook auth is disabled")
     broker = local_tool_broker or (tool_executor if isinstance(tool_executor, LocalToolBroker) else None)
     app.add_middleware(CorrelationMetricsMiddleware, metrics=request_metrics)
     app.include_router(create_auth_router(auth_service))
+    app.include_router(
+        create_webhook_router(
+            session_factory=database_sessions,
+            webhook_token=webhook_token,
+            ingest_alerts_fn=webhook_ingest_alerts,
+        )
+    )
 
     def authenticate(
         authorization: str | None = Header(default=None),
@@ -253,6 +281,34 @@ def create_app(
                 created_at=item.created_at.isoformat(),
             )
             for item in messages
+        ]
+
+    @app.get(
+        "/v1/conversations/{conversation_id}/events",
+        response_model=list[ConversationEventOutput],
+        tags=["conversations"],
+    )
+    async def list_conversation_events(
+        conversation_id: str,
+        after: int = Query(default=0, ge=0),
+        limit: int = Query(default=100, ge=1, le=500),
+        principal: AuthenticatedPrincipal = Depends(authenticate),
+    ) -> list[ConversationEventOutput]:
+        if await conversations.get(principal.user_id, conversation_id) is None:
+            raise HTTPException(status_code=404, detail="Conversation not found")
+        events = await runs.list_conversation_events(
+            principal.user_id, conversation_id, after, limit
+        )
+        return [
+            ConversationEventOutput(
+                id=event.id,
+                sequence=event.sequence,
+                run_id=event.run_id,
+                type=event.event_type,
+                data=dict(event.data),
+                created_at=event.created_at.isoformat(),
+            )
+            for event in events
         ]
 
     @app.post(

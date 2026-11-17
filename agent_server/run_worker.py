@@ -154,17 +154,30 @@ class AgentRunWorker:
                 else:
                     async def stream_event(event: dict[str, Any]) -> None:
                         event_type = event.get("type")
-                        if event_type != "agent_delta":
+                        if event_type not in {
+                            "agent_delta",
+                            "graph_step",
+                            "subagent_started",
+                            "subagent_update",
+                            "subagent_completed",
+                        }:
                             return
-                        text = event.get("text")
-                        if isinstance(text, str) and text:
-                            await self.runs.append_run_event(
-                                run.user_id,
-                                run.id,
-                                self.worker_id,
-                                "agent_delta",
-                                {"text": redact_secrets(text)},
-                            )
+                        payload = {
+                            key: value
+                            for key, value in event.items()
+                            if key != "type"
+                        }
+                        if event_type == "agent_delta":
+                            text = payload.get("text")
+                            if not isinstance(text, str) or not text:
+                                return
+                        await self.runs.append_run_event(
+                            run.user_id,
+                            run.id,
+                            self.worker_id,
+                            event_type,
+                            redact_secrets(payload),
+                        )
 
                     result = await run_stream(request, on_event=stream_event)
                 if not result.tool_calls:

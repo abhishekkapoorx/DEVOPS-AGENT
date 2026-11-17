@@ -70,6 +70,34 @@ def test_rest_client_creates_conversation_submits_idempotently_and_replays_sse()
     assert len(requests) == 4
 
 
+def test_rest_client_loads_all_conversation_event_pages_in_sequence_order():
+    paths = []
+
+    def opener(request, *, timeout):
+        path = request.full_url.split("example.test", 1)[1]
+        paths.append(path)
+        if "after=0" in path:
+            return _json_response([
+                {"sequence": sequence, "type": "user_message", "data": {}}
+                for sequence in range(1, 501)
+            ])
+        assert "after=500" in path
+        return _json_response([{"sequence": 501, "type": "assistant_message", "data": {}}])
+
+    client = RestAgentClient(
+        "https://example.test",
+        access_token=lambda: "access",
+        refresh_access_token=lambda: None,
+        opener=opener,
+    )
+
+    events = client.list_conversation_events("conversation-1")
+
+    assert len(events) == 501
+    assert [event["sequence"] for event in events] == list(range(1, 502))
+    assert len(paths) == 2
+
+
 def test_rest_client_renames_a_conversation_using_the_rest_contract():
     observed = []
 
