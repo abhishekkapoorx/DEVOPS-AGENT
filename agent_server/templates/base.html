@@ -11,6 +11,16 @@
     html { min-height: 100%; background: var(--bg-base); }
     body { min-height:100vh; margin:0; padding:24px; display:grid; place-items:center; background:var(--bg-base); color:var(--text-primary); font:400 14px/1.5 Inter,system-ui,sans-serif; }
     .page-card { width:min(100%,420px); padding:24px; border:1px solid var(--border-subtle); background:var(--bg-raised); }
+    .page-card.wide { width:min(100%,900px); align-self:start; }
+    h2 { margin:28px 0 12px; font-size:16px; }
+    h3 { margin:0 0 8px; font-size:15px; }
+    ul,ol { margin:0; padding-left:22px; }
+    li { margin:0 0 12px; }
+    li form { display:inline; margin-left:10px; }
+    li form button { width:auto; min-height:30px; padding:4px 8px; font-size:12px; }
+    article { margin:0 0 16px; padding:12px; border:1px solid var(--border-default); background:var(--bg-inset); }
+    code { overflow-wrap:anywhere; color:var(--accent-hover); }
+    pre { overflow:auto; padding:12px; border:1px solid var(--border-default); background:var(--bg-inset); color:var(--text-secondary); }
     .eyebrow { margin:0 0 12px; color:var(--text-muted); font:500 11px/1.4 ui-monospace,monospace; letter-spacing:.06em; text-transform:uppercase; }
     h1 { margin:0 0 8px; font-size:24px; font-weight:600; line-height:1.25; letter-spacing:-.01em; }
     .intro { margin:0 0 20px; color:var(--text-secondary); }

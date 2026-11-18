@@ -71,10 +71,11 @@ def _audit(
     )
 
 
-async def _active_investigation(session: Any, fingerprint: str) -> InvestigationRow | None:
+async def _active_investigation(session: Any, owner_user_id: str, fingerprint: str) -> InvestigationRow | None:
     return await session.scalar(
         select(InvestigationRow)
         .where(
+            InvestigationRow.owner_user_id == owner_user_id,
             InvestigationRow.fingerprint == fingerprint,
             InvestigationRow.status.in_(OPEN_STATUSES),
         )
@@ -91,6 +92,7 @@ async def _insert_alert(
         pg_insert(AlertRow)
         .values(
             id=uuid4().hex,
+            owner_user_id=alert.owner_user_id,
             fingerprint=fingerprint,
             delivery_key=key,
             source=alert.source,
@@ -124,6 +126,7 @@ async def _create_investigation(
 ) -> InvestigationRow:
     investigation = InvestigationRow(
         id=uuid4().hex,
+        owner_user_id=alert.owner_user_id,
         fingerprint=fingerprint,
         status="pending",
         alertname=alert.alertname,
@@ -143,6 +146,7 @@ async def _create_investigation(
         pg_insert(InvestigationRow)
         .values(
             id=investigation.id,
+            owner_user_id=investigation.owner_user_id,
             fingerprint=investigation.fingerprint,
             status=investigation.status,
             alertname=investigation.alertname,
@@ -168,7 +172,7 @@ async def _create_investigation(
     )
     inserted_id = (await session.execute(statement)).scalar_one_or_none()
     if inserted_id is None:
-        existing = await _active_investigation(session, fingerprint)
+        existing = await _active_investigation(session, alert.owner_user_id, fingerprint)
         if existing is None:
             raise RuntimeError("investigation insert raced without an active row")
         return existing
@@ -200,7 +204,7 @@ async def _ingest_one(session: Any, alert: NormalizedAlert) -> IngestResult:
             "deduped",
         )
 
-    active = await _active_investigation(session, fingerprint)
+    active = await _active_investigation(session, alert.owner_user_id, fingerprint)
     if alert.status == "resolved":
         if active is None:
             await session.commit()
@@ -242,6 +246,7 @@ async def _ingest_one(session: Any, alert: NormalizedAlert) -> IngestResult:
         select(InvestigationRow)
         .where(
             InvestigationRow.fingerprint == fingerprint,
+            InvestigationRow.owner_user_id == alert.owner_user_id,
             InvestigationRow.status == "closed",
             InvestigationRow.resolved_at.is_not(None),
             InvestigationRow.resolved_at

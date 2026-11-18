@@ -11,6 +11,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    LargeBinary,
     JSON,
     String,
     Text,
@@ -130,6 +131,7 @@ class RawWebhookRow(Base):
     __tablename__ = "raw_webhooks"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: uuid4().hex)
+    owner_user_id: Mapped[str] = mapped_column(String(255), index=True, default="system")
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     headers: Mapped[dict] = mapped_column(JSONB)
     body: Mapped[dict] = mapped_column(JSONB)
@@ -143,7 +145,8 @@ class InvestigationRow(Base):
             name="ck_investigations_status",
         ),
         Index(
-            "uq_investigations_open_fingerprint",
+            "uq_investigations_open_owner_fingerprint",
+            "owner_user_id",
             "fingerprint",
             unique=True,
             postgresql_where=text(
@@ -153,6 +156,7 @@ class InvestigationRow(Base):
     )
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: uuid4().hex)
+    owner_user_id: Mapped[str] = mapped_column(String(255), index=True, default="system")
     fingerprint: Mapped[str] = mapped_column(String(64), index=True)
     status: Mapped[str] = mapped_column(String(32), index=True)
     alertname: Mapped[str] = mapped_column(String(255))
@@ -183,6 +187,7 @@ class AlertRow(Base):
     )
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: uuid4().hex)
+    owner_user_id: Mapped[str] = mapped_column(String(255), index=True, default="system")
     fingerprint: Mapped[str] = mapped_column(String(64), index=True)
     delivery_key: Mapped[str] = mapped_column(String(64), unique=True)
     source: Mapped[str] = mapped_column(String(64), index=True)
@@ -239,6 +244,36 @@ class InvestigationEvidenceRow(Base):
     raw: Mapped[dict | list | str | None] = mapped_column(JSONB, nullable=True)
     truncated: Mapped[bool] = mapped_column(default=False)
     content_hash: Mapped[str] = mapped_column(String(64))
+
+
+class WebhookSecretRow(Base):
+    __tablename__ = "webhook_secrets"
+    __table_args__ = (UniqueConstraint("user_id", "name", name="uq_webhook_secrets_user_name"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(255), index=True)
+    name: Mapped[str] = mapped_column(String(128))
+    secret_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class UserSecretRow(Base):
+    __tablename__ = "user_secrets"
+    __table_args__ = (
+        UniqueConstraint("user_id", "provider", "name", name="uq_user_secrets_user_provider_name"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(255), index=True)
+    provider: Mapped[str] = mapped_column(String(128))
+    name: Mapped[str] = mapped_column(String(128))
+    ciphertext: Mapped[bytes] = mapped_column(LargeBinary)
+    nonce: Mapped[bytes] = mapped_column(LargeBinary)
+    key_version: Mapped[str] = mapped_column(String(32))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
 
 class InvestigationRunRow(Base):

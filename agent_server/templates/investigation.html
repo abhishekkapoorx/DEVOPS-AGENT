@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block content %}
+<main class="page-card wide" aria-labelledby="investigation-title">
+  <p class="eyebrow">DevOps Agent / Investigation report</p>
+  <h1 id="investigation-title">{{ report.alertname }}</h1>
+  <p class="intro">{{ report.status }} · {{ report.workload or "unknown" }} · {{ report.namespace or "unknown" }} · {{ report.severity }}</p>
+  <h2>Hypotheses</h2>
+  {% for item in report.result.get("hypotheses", []) %}<article><h3>{{ item.title }} <small>{{ item.confidence }}</small></h3>{% for claim in item.claims %}<p>{{ claim.text }} <strong>[{{ claim.evidence_ids|join(", ") }}]</strong></p>{% endfor %}</article>{% else %}<p>Deterministic context pack or degraded analysis: {{ report.result.get("reason", "no hypotheses") }}</p>{% endfor %}
+  <h2>Evidence</h2>
+  <ol>{% for item in report.evidence %}<li id="{{ item.id }}"><strong>{{ item.id }}</strong> · {{ item.source }}<br>{{ item.summary }}</li>{% else %}<li>No evidence persisted.</li>{% endfor %}</ol>
+  <h2>Verification</h2>
+  <p>Kept {{ report.verifier_report.get("claims_kept", 0) }} of {{ report.verifier_report.get("claims_total", 0) }} claims; grounded rate {{ (report.verifier_report.get("grounded_claim_rate", 0) * 100)|round(0) }}%.</p>
+  <p class="fine-print">READ-ONLY analysis. No actions were taken. <a href="/investigations">Back to investigations</a></p>
+</main>
+{% endblock %}

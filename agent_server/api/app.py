@@ -9,6 +9,7 @@ import json
 import logging
 import os
 import re
+from pathlib import Path
 from typing import Callable
 from contextlib import asynccontextmanager
 from urllib.parse import unquote
@@ -25,6 +26,7 @@ from agent_server.run_worker import AgentRunWorker
 from agent_server.conversation_titles import ConversationTitleGenerator
 from agent_server.local_tool_broker import LocalToolBroker
 from .auth_routes import create_auth_router
+from .settings import create_settings_router
 from .webhook import create_webhook_router
 from agent_server.observability import CorrelationMetricsMiddleware, HttpMetrics, InMemoryRateLimiter
 from .security import require_authenticated_user
@@ -114,6 +116,7 @@ def create_app(
     database_sessions=None,
     webhook_token: str | None = None,
     webhook_ingest_alerts=None,
+    secret_repository=None,
 ) -> FastAPI:
     """Create an API with auth and storage adapters supplied by deployment."""
 
@@ -158,8 +161,18 @@ def create_app(
             session_factory=database_sessions,
             webhook_token=webhook_token,
             ingest_alerts_fn=webhook_ingest_alerts,
+            webhook_secret_owner=(secret_repository.find_webhook_owner if secret_repository else None),
         )
     )
+    if database_sessions is not None:
+        app.include_router(
+            create_settings_router(
+                sessions=database_sessions,
+                secret_repository=secret_repository,
+                auth_service=auth_service,
+                template_dir=Path(__file__).resolve().parent.parent / "templates",
+            )
+        )
 
     def authenticate(
         authorization: str | None = Header(default=None),

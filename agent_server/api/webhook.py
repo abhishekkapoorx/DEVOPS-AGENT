@@ -27,6 +27,7 @@ MAX_WEBHOOK_BYTES = 1024 * 1024
 SAFE_HEADERS = ("content-type", "user-agent", "x-forwarded-for", "x-request-id")
 SessionFactory = Any
 IngestAlerts = Callable[[Any, list[NormalizedAlert]], Awaitable[list[IngestResult]]]
+WebhookSecretOwner = Callable[[str], Awaitable[str | None]]
 
 
 def create_webhook_router(
@@ -34,6 +35,7 @@ def create_webhook_router(
     session_factory: SessionFactory | None,
     webhook_token: str | None,
     ingest_alerts_fn: IngestAlerts | None = None,
+    webhook_secret_owner: WebhookSecretOwner | None = None,
 ) -> APIRouter:
     router = APIRouter()
     ingest = ingest_alerts_fn or ingest_alerts
@@ -51,13 +53,24 @@ def create_webhook_router(
         request_id = request.headers.get("X-Request-ID") or uuid4().hex
         response.headers["X-Request-ID"] = request_id
         log_context = {"request_id": request_id, "webhook": "alertmanager"}
+        owner_user_id = "system" if webhook_token is None and webhook_secret_owner is None else ""
 
+        authorization = request.headers.get("Authorization", "")
+        scheme, _, supplied = authorization.partition(" ")
         if webhook_token is not None:
-            authorization = request.headers.get("Authorization", "")
-            scheme, _, supplied = authorization.partition(" ")
-            if scheme.lower() != "bearer" or not hmac.compare_digest(
-                supplied, webhook_token
-            ):
+            valid = scheme.lower() == "bearer" and hmac.compare_digest(supplied, webhook_token)
+            if valid:
+                owner_user_id = "system"
+            elif webhook_secret_owner is not None and scheme.lower() == "bearer":
+                owner_user_id = await webhook_secret_owner(supplied) or ""
+            if not valid and not owner_user_id:
+                logger.warning("rejected webhook authentication", extra=log_context)
+                raise HTTPException(status_code=401, detail="Invalid webhook credentials")
+        elif webhook_secret_owner is not None:
+            if scheme.lower() != "bearer":
+                raise HTTPException(status_code=401, detail="Bearer webhook secret required")
+            owner_user_id = await webhook_secret_owner(supplied) or ""
+            if not owner_user_id:
                 logger.warning("rejected webhook authentication", extra=log_context)
                 raise HTTPException(status_code=401, detail="Invalid webhook credentials")
 
@@ -103,12 +116,23 @@ def create_webhook_router(
             received_at=received_at,
         )
         async with session_factory() as session:
-            session.add(RawWebhookRow(received_at=received_at, headers=headers, body=decoded))
+            session.add(
+                RawWebhookRow(
+                    owner_user_id=owner_user_id,
+                    received_at=received_at,
+                    headers=headers,
+                    body=decoded,
+                )
+            )
             await session.commit()
 
             for raw_alert in payload.alerts:
                 try:
-                    normalized.append(normalize_alert(raw_alert, context))
+                    normalized.append(
+                        normalize_alert(raw_alert, context).model_copy(
+                            update={"owner_user_id": owner_user_id}
+                        )
+                    )
                 except ValidationError as exc:
                     skipped += 1
                     logger.warning(

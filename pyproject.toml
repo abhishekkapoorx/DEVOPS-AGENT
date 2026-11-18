@@ -19,6 +19,7 @@ server = [
     "alembic>=1.16,<2",
     "argon2-cffi>=23.1,<26",
     "asyncpg>=0.30,<1",
+    "cryptography>=46,<51",
     "fastapi>=0.119,<1",
     "httpx>=0.27,<1",
     "kubernetes-asyncio>=29,<30",

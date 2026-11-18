@@ -256,6 +256,21 @@ class AuthSessionService:
         if session is not None:
             await self.repository.revoke_session_family(session.family_id, self.now())
 
+    async def issue_browser_session(self, user_id: str) -> TokenPair:
+        """Issue the same rotating session pair for the authenticated website."""
+        now = self.now()
+        refresh = secrets.token_urlsafe(48)
+        session = AuthSession(
+            session_id=uuid4().hex,
+            family_id=uuid4().hex,
+            user_id=user_id,
+            refresh_hash=_hash_token(refresh),
+            created_at=now,
+            expires_at=now + timedelta(seconds=self.refresh_ttl),
+        )
+        await self.repository.create_session(session)
+        return self._tokens(user_id, refresh)
+
     def current_user(self, access_token: str, *, claimed_user_id: str | None = None) -> AuthenticatedUser | None:
         claims = verify_access_token(access_token, self.access_token_secret)
         if claims is None or (claimed_user_id is not None and claimed_user_id != claims.user_id):

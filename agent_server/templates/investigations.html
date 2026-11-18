@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block content %}
+<main class="page-card wide" aria-labelledby="investigations-title">
+  <p class="eyebrow">DevOps Agent / Reports</p>
+  <h1 id="investigations-title">Investigations</h1>
+  <p class="intro"><a href="/settings">Integrations and secrets</a></p>
+  <ul>{% for item in investigations %}<li><a href="/investigations/{{ item.id }}">{{ item.alertname }} — {{ item.workload or "unknown" }}</a><br><small>{{ item.status }} · {{ item.severity }} · {{ item.occurrence_count }} occurrence(s)</small></li>{% else %}<li>No investigations yet.</li>{% endfor %}</ul>
+</main>
+{% endblock %}

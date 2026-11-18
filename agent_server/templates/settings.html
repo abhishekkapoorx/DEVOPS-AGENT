@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block content %}
+<main class="page-card wide" aria-labelledby="settings-title">
+  <p class="eyebrow">DevOps Agent / Integrations</p>
+  <h1 id="settings-title">Secrets and webhooks</h1>
+  <p class="intro">Secrets are write-only from the website. Copy a webhook secret immediately after creating it.</p>
+  {% if new_webhook_secret %}
+  <p class="notice" role="alert"><strong>Copy this webhook secret now:</strong><br><code>{{ new_webhook_secret }}</code><br>It will not be shown again.</p>
+  <pre><code>{{ alertmanager_config }}</code></pre>
+  {% endif %}
+  <h2>Alertmanager webhooks</h2>
+  <form method="post" action="/settings/webhook-secrets">
+    <label class="field">Name<input name="name" placeholder="kind-alertmanager" required maxlength="128"></label>
+    <button type="submit">Generate webhook secret</button>
+  </form>
+  <ul>{% for item in webhooks %}<li>{{ item.name }} <small>{{ item.created_at }}</small><form method="post" action="/settings/webhook-secrets/{{ item.id }}/revoke"><button class="secondary" type="submit">Revoke</button></form></li>{% else %}<li>No webhook secrets.</li>{% endfor %}</ul>
+  <h2>Provider secrets</h2>
+  <form method="post" action="/settings/resource-secrets">
+    <label class="field">Provider<input name="provider" placeholder="github" required maxlength="128"></label>
+    <label class="field">Name<input name="name" placeholder="personal-token" required maxlength="128"></label>
+    <label class="field">Secret value<input type="password" name="value" required maxlength="100000"></label>
+    <button type="submit">Save encrypted secret</button>
+  </form>
+  <ul>{% for item in resources %}<li>{{ item.provider }}/{{ item.name }} <small>{{ item.updated_at }}</small><form method="post" action="/settings/resource-secrets/{{ item.id }}/delete"><button class="secondary" type="submit">Delete</button></form></li>{% else %}<li>No provider secrets.</li>{% endfor %}</ul>
+  <p class="fine-print"><a href="/investigations">View investigations</a></p>
+</main>
+{% endblock %}

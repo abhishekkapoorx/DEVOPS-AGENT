@@ -10,7 +10,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from fastapi import FastAPI, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from agent_core import AgentRequest, AgentResponse
@@ -24,6 +24,8 @@ from agent_server.persistence.auth import PostgresAuthRepository
 from agent_server.postgres_device_approval import PostgresDeviceApprovalProvider
 from agent_server.persistence.postgres import PostgresConversationRepository, create_session_factory
 from agent_server.local_tool_broker import LocalToolBroker
+from agent_server.persistence.secrets import SecretRepository
+from agent_server.secrets import SecretBox, SecretConfigurationError
 
 
 @dataclass(frozen=True)
@@ -37,6 +39,7 @@ class Settings:
     model_name: str
     model_base_url: str | None
     webhook_token: str | None
+    encryption_key: str | None
 
     @classmethod
     def from_environment(cls) -> "Settings":
@@ -87,6 +90,7 @@ class Settings:
             model_name=os.getenv("DEVOPS_AGENT_MODEL_NAME", "gpt-4o-mini"),
             model_base_url=os.getenv("DEVOPS_AGENT_MODEL_BASE_URL") or None,
             webhook_token=os.getenv("WEBHOOK_TOKEN") or None,
+            encryption_key=os.getenv("ENCRYPTION_KEY") or None,
         )
 
 
@@ -139,6 +143,12 @@ def create_api_from_environment() -> FastAPI:
     auth = AuthSessionService(repository=auth_repository, approval_provider=provider, access_token_secret=settings.access_token_secret)
     local_tools = LocalToolBroker()
     model = _model(settings)
+    secret_repository = None
+    if settings.encryption_key:
+        try:
+            secret_repository = SecretRepository(sessions, SecretBox.from_environment())
+        except SecretConfigurationError:
+            secret_repository = None
     app = create_app(
         runtime=_runtime(settings, model),
         conversations=PostgresConversationRepository(sessions),
@@ -150,9 +160,10 @@ def create_api_from_environment() -> FastAPI:
         database_engine=engine,
         database_sessions=sessions,
         webhook_token=settings.webhook_token,
+        secret_repository=secret_repository,
     )
     if is_local_auth:
-        _mount_local_account_approval(app, provider, LocalAccountService(auth_repository))
+        _mount_local_account_approval(app, provider, LocalAccountService(auth_repository), auth)
     else:
         _mount_development_approval(app, provider, settings)
     return app
@@ -199,6 +210,7 @@ def _mount_local_account_approval(
     app: FastAPI,
     provider: PostgresDeviceApprovalProvider,
     accounts: LocalAccountService,
+    auth_service: AuthSessionService | None = None,
 ) -> None:
     templates = Jinja2Templates(directory=Path(__file__).with_name("templates"))
 
@@ -280,6 +292,12 @@ def _mount_local_account_approval(
             approval_id, user_code=user_code, user_id=user_id, approved=True
         ):
             raise HTTPException(400, "Device authorization expired; start again")
+        if auth_service is not None:
+            tokens = await auth_service.issue_browser_session(user_id)
+            response = RedirectResponse("/settings", status_code=303)
+            response.set_cookie("devops_access_token", tokens.access_token, httponly=True, samesite="lax")
+            response.set_cookie("devops_refresh_token", tokens.refresh_token, httponly=True, samesite="lax")
+            return response
         return templates.TemplateResponse(
             request=request,
             name="status_page.html",

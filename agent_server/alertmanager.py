@@ -53,6 +53,7 @@ class AlertNormalizationContext:
 
 class NormalizedAlert(BaseModel):
     source: Literal["alertmanager"] = "alertmanager"
+    owner_user_id: str = "system"
     source_fingerprint: str | None = None
     alertname: str
     severity: str = "unknown"

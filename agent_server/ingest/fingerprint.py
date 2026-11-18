@@ -34,7 +34,7 @@ def delivery_key(alert: NormalizedAlert) -> str:
     """Return an idempotency key for one exact Alertmanager delivery."""
 
     encoded = json.dumps(
-        {"source": alert.source, "alert": alert.raw},
+        {"source": alert.source, "owner_user_id": alert.owner_user_id, "alert": alert.raw},
         sort_keys=True,
         separators=(",", ":"),
     ).encode()
