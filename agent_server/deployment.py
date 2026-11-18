@@ -144,6 +144,7 @@ def create_api_from_environment() -> FastAPI:
     local_tools = LocalToolBroker()
     model = _model(settings)
     secret_repository = None
+    account_service = LocalAccountService(auth_repository)
     if settings.encryption_key:
         try:
             secret_repository = SecretRepository(sessions, SecretBox.from_environment())
@@ -161,9 +162,10 @@ def create_api_from_environment() -> FastAPI:
         database_sessions=sessions,
         webhook_token=settings.webhook_token,
         secret_repository=secret_repository,
+        website_accounts=account_service,
     )
     if is_local_auth:
-        _mount_local_account_approval(app, provider, LocalAccountService(auth_repository), auth)
+        _mount_local_account_approval(app, provider, account_service, auth)
     else:
         _mount_development_approval(app, provider, settings)
     return app

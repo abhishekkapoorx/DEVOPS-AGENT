@@ -118,6 +118,7 @@ def create_app(
     webhook_token: str | None = None,
     webhook_ingest_alerts=None,
     secret_repository=None,
+    website_accounts=None,
 ) -> FastAPI:
     """Create an API with auth and storage adapters supplied by deployment."""
 
@@ -146,7 +147,13 @@ def create_app(
                     await database_engine.dispose()
 
     app = FastAPI(title="DevOps Agent API", version="1", lifespan=lifespan)
-    app.include_router(create_website_router(Path(__file__).resolve().parent.parent / "templates"))
+    app.include_router(
+        create_website_router(
+            Path(__file__).resolve().parent.parent / "templates",
+            accounts=website_accounts,
+            auth_service=auth_service,
+        )
+    )
     request_metrics = metrics or HttpMetrics()
     limiter = rate_limiter or InMemoryRateLimiter()
     app.state.metrics = request_metrics

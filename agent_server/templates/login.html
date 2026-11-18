@@ -2,25 +2,27 @@
 <html lang="en">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Sign in | DevOps Agent</title>
+  <title>{{ "Create account" if mode == "signup" else "Sign in" }} | DevOps Agent</title>
   <style>
-    :root { color-scheme:dark; --bg:#090b12; --panel:#111827; --line:#293650; --text:#f4f7fb; --muted:#9aa8bd; --blue:#72a8ff; }
+    :root { color-scheme:dark; --bg:#090b12; --panel:#111827; --line:#293650; --text:#f4f7fb; --muted:#9aa8bd; --blue:#72a8ff; --danger:#ff9d9d; }
     * { box-sizing:border-box; } body { display:grid; min-height:100vh; place-items:center; margin:0; padding:20px; color:var(--text); background:radial-gradient(circle at 50% 0,#1b3158,transparent 32rem),var(--bg); font:15px/1.5 Inter,system-ui,sans-serif; }
     .card { width:min(100%,460px); padding:32px; border:1px solid var(--line); border-radius:18px; background:#111827ee; box-shadow:0 30px 90px #0008; }
-    a { color:var(--blue); } h1 { margin:0 0 8px; letter-spacing:-.04em; } p { color:var(--muted); } button { width:100%; margin-top:10px; padding:13px 16px; border:1px solid var(--blue); border-radius:9px; background:var(--blue); color:#08111e; font-weight:750; cursor:pointer; } button.secondary { border-color:var(--line); background:#172238; color:var(--text); } #message { min-height:22px; color:#ffb9b9; }
+    a { color:var(--blue); } h1 { margin:0 0 8px; letter-spacing:-.04em; } p { color:var(--muted); } .message { min-height:24px; color:var(--danger); }
+    .tabs { display:flex; gap:18px; margin:22px 0; border-bottom:1px solid var(--line); } .tabs a { padding-bottom:10px; color:var(--muted); } .tabs a.active { color:var(--text); border-bottom:2px solid var(--blue); }
+    label { display:block; margin:14px 0; color:var(--muted); } input { display:block; width:100%; margin-top:6px; padding:13px; border:1px solid var(--line); border-radius:8px; background:#0b111e; color:var(--text); }
+    button { width:100%; margin-top:10px; padding:13px 16px; border:1px solid var(--blue); border-radius:9px; background:var(--blue); color:#08111e; font-weight:750; cursor:pointer; }
   </style>
 </head>
-<body><main class="card"><p>DevOps Agent / Account</p><h1>Open your workspace</h1><p>Sign in to view investigations and manage Alertmanager and provider secrets.</p><div id="message"></div><button onclick="start('signin')">Sign in</button><button class="secondary" onclick="start('signup')">Create an account</button><p><a href="/">Back to home</a></p></main>
-<script>
-async function start(mode) {
-  const message = document.getElementById('message');
-  message.textContent = 'Preparing secure sign-in…';
-  try {
-    const response = await fetch('/v1/auth/device', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({mode})});
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.detail || 'Unable to start sign-in');
-    window.location.href = data.verification_url;
-  } catch (error) { message.textContent = error.message; }
-}
-</script>
-</body></html>
+<body><main class="card">
+  <p>DevOps Agent / Website account</p>
+  <h1>{{ "Create your account" if mode == "signup" else "Welcome back" }}</h1>
+  <p>Use the website account directly. This route is separate from the CLI device login flow.</p>
+  <nav class="tabs"><a class="{{ 'active' if mode == 'signin' else '' }}" href="/login?mode=signin">Sign in</a><a class="{{ 'active' if mode == 'signup' else '' }}" href="/login?mode=signup">Create an account</a></nav>
+  {% if message %}<div class="message" role="alert">{{ message }}</div>{% endif %}
+  <form method="post" action="{{ '/website/signup' if mode == 'signup' else '/website/login' }}">
+    <label>Email<input type="email" name="email" autocomplete="email" required maxlength="254"></label>
+    <label>Password<input type="password" name="password" autocomplete="{{ 'new-password' if mode == 'signup' else 'current-password' }}" required minlength="12" maxlength="1024"></label>
+    <button type="submit">{{ "Create account" if mode == "signup" else "Sign in" }}</button>
+  </form>
+  <p><a href="/">Back to home</a></p>
+</main></body></html>
