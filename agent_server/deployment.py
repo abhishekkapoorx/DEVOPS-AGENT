@@ -148,8 +148,8 @@ def create_api_from_environment() -> FastAPI:
     if settings.encryption_key:
         try:
             secret_repository = SecretRepository(sessions, SecretBox.from_environment())
-        except SecretConfigurationError:
-            secret_repository = None
+        except SecretConfigurationError as error:
+            raise RuntimeError(f"Invalid ENCRYPTION_KEY configuration: {error}") from error
     app = create_app(
         runtime=_runtime(settings, model),
         conversations=PostgresConversationRepository(sessions),

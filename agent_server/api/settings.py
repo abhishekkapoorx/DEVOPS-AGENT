@@ -66,7 +66,10 @@ def create_settings_router(
 
     def require_secret_store() -> SecretRepository:
         if secret_repository is None:
-            raise HTTPException(status_code=503, detail="ENCRYPTION_KEY is not configured")
+            raise HTTPException(
+                status_code=503,
+                detail="Secret storage is not configured; set ENCRYPTION_KEY and restart the API",
+            )
         return secret_repository
 
     async def report_data(user_id: str) -> list[dict[str, Any]]:
