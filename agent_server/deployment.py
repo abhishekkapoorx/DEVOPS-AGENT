@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-from html import escape
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -160,20 +159,40 @@ def create_api_from_environment() -> FastAPI:
 
 
 def _mount_development_approval(app: FastAPI, provider: InProcessDeviceApprovalProvider, settings: Settings) -> None:
+    templates = Jinja2Templates(directory=Path(__file__).with_name("templates"))
+
     @app.get("/v1/development/device/{approval_id}", response_class=HTMLResponse, include_in_schema=False)
-    async def development_device_page(approval_id: str):
+    async def development_device_page(request: Request, approval_id: str):
         pending = provider.pending(approval_id)
         if pending is None:
             raise HTTPException(404, "Unknown or expired device approval")
-        code = escape(pending.user_code)
-        user_id = escape(settings.development_user_id, quote=True)
-        return f"<h1>DevOps Agent development sign-in</h1><p>Approve sign-in for <b>{user_id}</b> using code <b>{code}</b>.</p><form method='post'><input type='hidden' name='user_code' value='{code}'><button name='decision' value='approve'>Approve</button><button name='decision' value='deny'>Deny</button></form>"
+        return templates.TemplateResponse(
+            request=request,
+            name="device_approval.html",
+            context={
+                "title": "Development sign-in",
+                "user_code": pending.user_code,
+                "user_id": settings.development_user_id,
+                "action_url": request.url.path,
+            },
+            headers={"Cache-Control": "no-store"},
+        )
 
     @app.post("/v1/development/device/{approval_id}", response_class=HTMLResponse, include_in_schema=False)
-    async def development_device_decision(approval_id: str, user_code: str = Form(), decision: str = Form()):
+    async def development_device_decision(request: Request, approval_id: str, user_code: str = Form(), decision: str = Form()):
         if not provider.decide(approval_id, user_code=user_code, user_id=settings.development_user_id, approved=decision == "approve"):
             raise HTTPException(400, "Invalid or expired approval")
-        return "<h1>Device decision recorded</h1><p>You may return to the CLI.</p>"
+        return templates.TemplateResponse(
+            request=request,
+            name="status_page.html",
+            context={
+                "title": "Device decision recorded",
+                "eyebrow": "Device approval",
+                "heading": "Device decision recorded",
+                "message": "You may return to the DevOps Agent CLI.",
+            },
+            headers={"Cache-Control": "no-store"},
+        )
 
 
 def _mount_local_account_approval(
@@ -261,9 +280,15 @@ def _mount_local_account_approval(
             approval_id, user_code=user_code, user_id=user_id, approved=True
         ):
             raise HTTPException(400, "Device authorization expired; start again")
-        return HTMLResponse(
-            "<!doctype html><h1>Signed in successfully</h1>"
-            "<p>You may return to the DevOps Agent CLI.</p>",
+        return templates.TemplateResponse(
+            request=request,
+            name="status_page.html",
+            context={
+                "title": "Signed in successfully",
+                "eyebrow": "Account",
+                "heading": "Signed in successfully",
+                "message": "You may return to the DevOps Agent CLI.",
+            },
             headers={"Cache-Control": "no-store"},
         )
 
