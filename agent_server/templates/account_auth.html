@@ -164,9 +164,9 @@
     </nav>
     <form method="post" action="{{ action_url }}">
       <input type="hidden" name="user_code" value="{{ user_code }}">
-      <input type="hidden" name="mode" value="{{ mode }}">
+      <input type="hidden" name='mode' value='{{ mode }}'>
       <label class="field">Email address
-        <input type="email" name="email" autocomplete="email" placeholder="you@example.com" required maxlength="254">
+        <input type="email" name='email' autocomplete="email" placeholder="you@example.com" required maxlength="254">
       </label>
       <label class="field">Password
         <input type="password" name="password" autocomplete="{{ password_autocomplete }}" required minlength="12" maxlength="1024">

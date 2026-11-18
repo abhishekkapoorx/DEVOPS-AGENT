@@ -82,6 +82,11 @@ class InvestigationWorker:
                     details={"attempt_count": row.attempt_count},
                 )
             )
+            # The claimed row is handed to code that runs after this session
+            # closes.  Detach it after flushing the claim so the worker does
+            # not depend on callers configuring expire_on_commit=False.
+            await session.flush()
+            session.expunge(row)
             await session.commit()
             return row
 
