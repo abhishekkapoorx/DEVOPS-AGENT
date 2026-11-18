@@ -102,6 +102,57 @@ def test_completed_run_and_events_can_be_replayed():
     assert [event["sequence"] for event in replay.json()] == [2, 3]
 
 
+def test_conversation_event_history_restores_messages_and_execution_in_order():
+    client, _, conversation_id = _client()
+    client.post(
+        f"/v1/conversations/{conversation_id}/messages",
+        headers={"Idempotency-Key": "timeline-first"},
+        json={"content": "hello"},
+    )
+    client.post(
+        f"/v1/conversations/{conversation_id}/messages",
+        headers={"Idempotency-Key": "timeline-second"},
+        json={"content": "again"},
+    )
+
+    response = client.get(f"/v1/conversations/{conversation_id}/events?limit=100")
+
+    assert response.status_code == 200
+    events = response.json()
+    assert [event["sequence"] for event in events] == sorted(
+        event["sequence"] for event in events
+    )
+    assert [event["data"].get("content") for event in events if event["type"] == "user_message"] == [
+        "hello", "again"
+    ]
+    assert [event["data"].get("content") for event in events if event["type"] == "assistant_message"] == [
+        "answer 1", "answer 2"
+    ]
+    assert [event["type"] for event in events].count("run_started") == 2
+
+
+def test_conversation_event_history_is_owner_scoped_and_cursor_paginated():
+    client, _, conversation_id = _client()
+    client.post(
+        f"/v1/conversations/{conversation_id}/messages",
+        headers={"Idempotency-Key": "timeline-owner"},
+        json={"content": "hello"},
+    )
+    other = TestClient(
+        client.app,
+        headers={"Authorization": f"Bearer {issue_access_token('test-access-token-secret', 'other-user')}"},
+    )
+
+    all_events = client.get(f"/v1/conversations/{conversation_id}/events?limit=2").json()
+    next_events = client.get(
+        f"/v1/conversations/{conversation_id}/events?after={all_events[-1]['sequence']}&limit=2"
+    ).json()
+
+    assert len(all_events) == 2
+    assert all(event["sequence"] > all_events[-1]["sequence"] for event in next_events)
+    assert other.get(f"/v1/conversations/{conversation_id}/events").status_code == 404
+
+
 def test_runtime_failure_is_recorded_as_a_failed_run():
     client, runtime, conversation_id = _client()
     runtime.error = RuntimeError("private provider detail")

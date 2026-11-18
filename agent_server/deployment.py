@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 import os
-from html import escape
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-from fastapi import FastAPI, Form, HTTPException
+from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
 
 from agent_core import AgentRequest, AgentResponse
 from agent_server.accounts import AccountAlreadyExists, AccountError, LocalAccountService
@@ -34,6 +35,8 @@ class Settings:
     development_user_id: str
     model_provider: str
     model_name: str
+    model_base_url: str | None
+    webhook_token: str | None
 
     @classmethod
     def from_environment(cls) -> "Settings":
@@ -82,6 +85,8 @@ class Settings:
             development_user_id=os.getenv("DEVOPS_AGENT_DEVELOPMENT_USER_ID", "developer"),
             model_provider=provider,
             model_name=os.getenv("DEVOPS_AGENT_MODEL_NAME", "gpt-4o-mini"),
+            model_base_url=os.getenv("DEVOPS_AGENT_MODEL_BASE_URL") or None,
+            webhook_token=os.getenv("WEBHOOK_TOKEN") or None,
         )
 
 
@@ -107,7 +112,10 @@ def _runtime(settings: Settings, model: Any | None = None) -> Any:
 def _model(settings: Settings) -> Any:
     if settings.model_provider == "openai":
         from langchain_openai import ChatOpenAI
-        return ChatOpenAI(model=settings.model_name)
+        kwargs = {"model": settings.model_name}
+        if settings.model_base_url:
+            kwargs["base_url"] = settings.model_base_url
+        return ChatOpenAI(**kwargs)
     if settings.model_provider == "groq":
         from langchain_groq import ChatGroq
         return ChatGroq(model=settings.model_name)
@@ -140,6 +148,8 @@ def create_api_from_environment() -> FastAPI:
         tool_executor=local_tools,
         local_tool_broker=local_tools,
         database_engine=engine,
+        database_sessions=sessions,
+        webhook_token=settings.webhook_token,
     )
     if is_local_auth:
         _mount_local_account_approval(app, provider, LocalAccountService(auth_repository))
@@ -149,20 +159,40 @@ def create_api_from_environment() -> FastAPI:
 
 
 def _mount_development_approval(app: FastAPI, provider: InProcessDeviceApprovalProvider, settings: Settings) -> None:
+    templates = Jinja2Templates(directory=Path(__file__).with_name("templates"))
+
     @app.get("/v1/development/device/{approval_id}", response_class=HTMLResponse, include_in_schema=False)
-    async def development_device_page(approval_id: str):
+    async def development_device_page(request: Request, approval_id: str):
         pending = provider.pending(approval_id)
         if pending is None:
             raise HTTPException(404, "Unknown or expired device approval")
-        code = escape(pending.user_code)
-        user_id = escape(settings.development_user_id, quote=True)
-        return f"<h1>DevOps Agent development sign-in</h1><p>Approve sign-in for <b>{user_id}</b> using code <b>{code}</b>.</p><form method='post'><input type='hidden' name='user_code' value='{code}'><button name='decision' value='approve'>Approve</button><button name='decision' value='deny'>Deny</button></form>"
+        return templates.TemplateResponse(
+            request=request,
+            name="device_approval.html",
+            context={
+                "title": "Development sign-in",
+                "user_code": pending.user_code,
+                "user_id": settings.development_user_id,
+                "action_url": request.url.path,
+            },
+            headers={"Cache-Control": "no-store"},
+        )
 
     @app.post("/v1/development/device/{approval_id}", response_class=HTMLResponse, include_in_schema=False)
-    async def development_device_decision(approval_id: str, user_code: str = Form(), decision: str = Form()):
+    async def development_device_decision(request: Request, approval_id: str, user_code: str = Form(), decision: str = Form()):
         if not provider.decide(approval_id, user_code=user_code, user_id=settings.development_user_id, approved=decision == "approve"):
             raise HTTPException(400, "Invalid or expired approval")
-        return "<h1>Device decision recorded</h1><p>You may return to the CLI.</p>"
+        return templates.TemplateResponse(
+            request=request,
+            name="status_page.html",
+            context={
+                "title": "Device decision recorded",
+                "eyebrow": "Device approval",
+                "heading": "Device decision recorded",
+                "message": "You may return to the DevOps Agent CLI.",
+            },
+            headers={"Cache-Control": "no-store"},
+        )
 
 
 def _mount_local_account_approval(
@@ -170,27 +200,28 @@ def _mount_local_account_approval(
     provider: PostgresDeviceApprovalProvider,
     accounts: LocalAccountService,
 ) -> None:
-    def render_form(approval_id: str, user_code: str, mode: str, message: str = ""):
-        title = "Create your account" if mode == "signup" else "Sign in"
-        submit = "Create account" if mode == "signup" else "Sign in"
-        notice = f"<p role='alert'>{escape(message)}</p>" if message else ""
-        html = (
-            "<!doctype html><html><head><meta charset='utf-8'><title>DevOps Agent account</title>"
-            "<meta name='viewport' content='width=device-width, initial-scale=1'></head><body>"
-            f"<h1>{title}</h1>{notice}"
-            "<p>This self-hosted account flow requires no external identity provider. "
-            "Email verification and password recovery are not configured.</p>"
-            f"<nav><a href='?user_code={escape(user_code, quote=True)}&amp;mode=signin'>Sign in</a> · "
-            f"<a href='?user_code={escape(user_code, quote=True)}&amp;mode=signup'>Create account</a></nav>"
-            f"<form method='post' action='/v1/auth/device/verify/{escape(approval_id, quote=True)}'>"
-            f"<input type='hidden' name='user_code' value='{escape(user_code, quote=True)}'>"
-            f"<input type='hidden' name='mode' value='{escape(mode, quote=True)}'>"
-            "<label>Email <input type='email' name='email' autocomplete='email' required maxlength='254'></label><br>"
-            f"<label>Password <input type='password' name='password' autocomplete='{'new-password' if mode == 'signup' else 'current-password'}' "
-            "required minlength='12' maxlength='1024'></label><br>"
-            f"<button type='submit'>{submit}</button></form></body></html>"
+    templates = Jinja2Templates(directory=Path(__file__).with_name("templates"))
+
+    def render_form(request: Request, approval_id: str, user_code: str, mode: str, message: str = ""):
+        page_url = request.url_for("local_account_page", approval_id=approval_id)
+        return templates.TemplateResponse(
+            request=request,
+            name="account_auth.html",
+            context={
+                "title": "Create your account" if mode == "signup" else "Sign in",
+                "submit_label": "Create account" if mode == "signup" else "Sign in",
+                "password_autocomplete": "new-password" if mode == "signup" else "current-password",
+                "password_hint": "Use at least 12 characters." if mode == "signup" else "Enter the password for your account.",
+                "approval_id": approval_id,
+                "user_code": user_code,
+                "mode": mode,
+                "message": message,
+                "action_url": page_url,
+                "signin_url": page_url.include_query_params(user_code=user_code, mode="signin"),
+                "signup_url": page_url.include_query_params(user_code=user_code, mode="signup"),
+            },
+            headers={"Cache-Control": "no-store"},
         )
-        return HTMLResponse(html, headers={"Cache-Control": "no-store"})
 
     async def pending_request(approval_id: str, user_code: str):
         pending = await provider.pending(approval_id)
@@ -207,10 +238,12 @@ def _mount_local_account_approval(
         response_class=HTMLResponse,
         include_in_schema=False,
     )
-    async def local_account_page(approval_id: str, user_code: str, mode: str | None = None):
+    async def local_account_page(
+        request: Request, approval_id: str, user_code: str, mode: str | None = None
+    ):
         pending = await pending_request(approval_id, user_code)
         selected_mode = mode if mode in {"signin", "signup"} else pending.mode.value
-        return render_form(approval_id, user_code, selected_mode)
+        return render_form(request, approval_id, user_code, selected_mode)
 
     @app.post(
         "/v1/auth/device/verify/{approval_id}",
@@ -218,6 +251,7 @@ def _mount_local_account_approval(
         include_in_schema=False,
     )
     async def local_account_decision(
+        request: Request,
         approval_id: str,
         user_code: str = Form(min_length=8, max_length=16),
         mode: str | None = Form(default=None),
@@ -234,21 +268,27 @@ def _mount_local_account_approval(
             else:
                 user_id = await accounts.sign_in(email, password)
         except AccountAlreadyExists as error:
-            response = render_form(approval_id, user_code, mode, str(error))
+            response = render_form(request, approval_id, user_code, mode, str(error))
             response.status_code = 409
             return response
         except AccountError as error:
             status_code = 401 if mode == "signin" else 400
-            response = render_form(approval_id, user_code, mode, str(error))
+            response = render_form(request, approval_id, user_code, mode, str(error))
             response.status_code = status_code
             return response
         if not await provider.decide(
             approval_id, user_code=user_code, user_id=user_id, approved=True
         ):
             raise HTTPException(400, "Device authorization expired; start again")
-        return HTMLResponse(
-            "<!doctype html><h1>Signed in successfully</h1>"
-            "<p>You may return to the DevOps Agent CLI.</p>",
+        return templates.TemplateResponse(
+            request=request,
+            name="status_page.html",
+            context={
+                "title": "Signed in successfully",
+                "eyebrow": "Account",
+                "heading": "Signed in successfully",
+                "message": "You may return to the DevOps Agent CLI.",
+            },
             headers={"Cache-Control": "no-store"},
         )
 

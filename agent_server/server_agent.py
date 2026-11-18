@@ -7,6 +7,7 @@ that an operation is needed, but it never performs that operation.
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping as MappingABC
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Mapping, Sequence
 
@@ -134,6 +135,10 @@ class ServerAgent:
             checkpointer=self.checkpointer,
         )
 
+    async def arun_stream(self, **kwargs) -> "AgentResponse":
+        """Run the graph with the event callback supplied by LangGraphRuntime."""
+        return await self.arun(**kwargs)
+
     async def arun(
         self,
         *,
@@ -183,20 +188,62 @@ class ServerAgent:
             result = await graph.ainvoke(input_state, context=context.model_dump(), config=config)
         else:
             result = None
+            active_subgraphs: dict[tuple[str, ...], str] = {}
+
+            async def observe_namespace(namespace: tuple[str, ...]) -> None:
+                if not namespace or namespace in active_subgraphs:
+                    return
+                label = namespace[-1].split(":", 1)[0]
+                active_subgraphs[namespace] = label
+                await on_event({
+                    "type": "subagent_started",
+                    "namespace": list(namespace),
+                    "name": label,
+                })
+
             async for mode, chunk in graph.astream(
                 input_state,
                 context=context.model_dump(),
                 config=config,
-                stream_mode=["messages", "values"],
+                stream_mode=["messages", "values", "updates"],
+                subgraphs=True,
             ):
+                namespace: tuple[str, ...] = ()
+                if isinstance(mode, tuple):
+                    namespace = mode
+                    mode, chunk = chunk
+                await observe_namespace(namespace)
                 if mode == "messages":
                     message, _metadata = chunk
                     if isinstance(message, AIMessageChunk):
                         text = _message_text(message.content)
                         if text:
-                            await on_event({"type": "agent_delta", "text": text})
+                            await on_event({
+                                "type": "agent_delta",
+                                "text": text,
+                                "namespace": list(namespace),
+                            })
                 elif mode == "values":
                     result = chunk
+                elif mode == "updates":
+                    for node_name, update in chunk.items():
+                        event_type = "subagent_update" if namespace else "graph_step"
+                        await on_event({
+                            "type": event_type,
+                            "namespace": list(namespace),
+                            "node": str(node_name),
+                            "updated_keys": sorted(str(key) for key in update)
+                            if isinstance(update, dict)
+                            else [],
+                            "result": _stream_update_result(update),
+                        })
+            for namespace, label in active_subgraphs.items():
+                await on_event({
+                    "type": "subagent_completed",
+                    "namespace": list(namespace),
+                    "name": label,
+                    "status": "completed",
+                })
             if result is None:
                 raise RuntimeError("Agent stream finished without a final state")
         return AgentResponse.from_result(result, context=context)
@@ -259,6 +306,36 @@ async def run_agent(
 
 
 __all__ = ["AgentResponse", "SERVER_AGENT_PROMPT", "ServerAgent", "SessionContext", "ToolRequest", "registered_request_tools", "run_agent"]
+
+
+def _stream_update_result(update: Any) -> dict[str, Any]:
+    """Project graph updates to JSON-safe, user-visible node results."""
+    if not isinstance(update, MappingABC):
+        return {}
+    return {
+        str(key): _json_safe_stream_value(value)
+        for key, value in update.items()
+        if str(key) != "messages"
+    }
+
+
+def _json_safe_stream_value(value: Any) -> Any:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, MappingABC):
+        return {str(key): _json_safe_stream_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe_stream_value(item) for item in value]
+    model_dump = getattr(value, "model_dump", None)
+    if callable(model_dump):
+        return _json_safe_stream_value(model_dump())
+    if isinstance(value, BaseMessage):
+        return {"type": value.type, "content": _json_safe_stream_value(value.content)}
+    try:
+        json.dumps(value)
+    except (TypeError, ValueError):
+        return str(value)
+    return value
 
 
 def _message_text(content: Any) -> str:

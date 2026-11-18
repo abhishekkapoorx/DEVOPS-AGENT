@@ -1,7 +1,15 @@
 """Framework-independent contracts for the DevOps Agent backend."""
 
 from .runtime import AgentRequest, AgentResponse, AgentRuntime, AgentToolCall
-from .runs import AgentRun, IdempotencyConflict, RunEvent, RunLeaseLost, RunRepository, RunState
+from .runs import (
+    AgentRun,
+    ConversationEvent,
+    IdempotencyConflict,
+    RunEvent,
+    RunLeaseLost,
+    RunRepository,
+    RunState,
+)
 from .conversations import Conversation, ConversationMessage, ConversationRepository
 from .tools import RegisteredTool, ToolDefinition, ToolExecutionContext, ToolResult
 
@@ -11,6 +19,7 @@ __all__ = [
     "AgentRuntime",
     "AgentToolCall",
     "AgentRun",
+    "ConversationEvent",
     "IdempotencyConflict",
     "RunEvent",
     "RunLeaseLost",

@@ -8,7 +8,14 @@ from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 from agent_core.conversations import Conversation, ConversationMessage
-from agent_core.runs import AgentRun, IdempotencyConflict, RunEvent, RunLeaseLost
+from agent_core.runs import (
+    AgentRun,
+    ConversationEvent,
+    IdempotencyConflict,
+    bounded_conversation_event_data,
+    RunEvent,
+    RunLeaseLost,
+)
 
 
 class InMemoryConversationRepository:
@@ -21,6 +28,7 @@ class InMemoryConversationRepository:
         self._runs: dict[str, AgentRun] = {}
         self._run_keys: dict[tuple[str, str, str], str] = {}
         self._run_events: dict[str, list[RunEvent]] = {}
+        self._conversation_events: dict[str, list[ConversationEvent]] = {}
 
     async def health_check(self) -> bool:
         return True
@@ -31,6 +39,7 @@ class InMemoryConversationRepository:
         async with self._lock:
             self._conversations[item.id] = item
             self._messages[item.id] = []
+            self._conversation_events[item.id] = []
         return item
 
     async def list_for_user(self, user_id: str) -> tuple[Conversation, ...]:
@@ -65,6 +74,13 @@ class InMemoryConversationRepository:
             message = ConversationMessage(uuid4().hex, conversation_id, role, content, now)
             self._messages[conversation_id].append(message)
             self._conversations[conversation_id] = replace(conversation, updated_at=now)
+            self._append_timeline_event(
+                conversation_id,
+                None,
+                f"{role}_message",
+                {"message_id": message.id, "role": role, "content": content},
+                now,
+            )
             return message
 
     async def list_messages(
@@ -123,6 +139,11 @@ class InMemoryConversationRepository:
             self._run_keys[key] = run.id
             self._run_events[run.id] = []
             self._append_run_event(run, "created", {"state": "pending"}, now)
+            self._append_conversation_event(
+                run, "user_message",
+                {"message_id": message.id, "role": "user", "content": content}, now
+            )
+            self._append_conversation_event(run, "run_created", {"state": "pending"}, now)
             return run, True
 
     async def claim_next_run(self, worker_id: str, lease_seconds: int) -> AgentRun | None:
@@ -145,6 +166,12 @@ class InMemoryConversationRepository:
                 self._runs[run.id] = run
                 event_type = "running" if prior_attempt == 0 else "resumed"
                 self._append_run_event(run, event_type, {"state": "running", "attempt": run.attempt}, now)
+                self._append_conversation_event(
+                    run,
+                    "run_resumed" if prior_attempt else "run_started",
+                    {"state": "running", "attempt": run.attempt},
+                    now,
+                )
                 return run
             return None
 
@@ -166,6 +193,7 @@ class InMemoryConversationRepository:
                 raise RunLeaseLost("run lease is no longer owned by this worker")
             now = datetime.now(timezone.utc)
             self._append_run_event(run, event_type, dict(data), now)
+            self._append_conversation_event(run, event_type, dict(data), now)
             return self._run_events[run_id][-1]
 
     async def complete_run(
@@ -182,7 +210,10 @@ class InMemoryConversationRepository:
                 raise RunLeaseLost("run lease is no longer owned by this worker")
             if run.state != "completed":
                 now = datetime.now(timezone.utc)
-                calls = tuple(dict(call) for call in tool_calls)
+                calls = tuple(
+                    bounded_conversation_event_data("tool_call_completed", dict(call))
+                    for call in tool_calls
+                )
                 run = replace(
                     run,
                     state="completed",
@@ -194,10 +225,15 @@ class InMemoryConversationRepository:
                 )
                 self._runs[run_id] = run
                 if message:
-                    self._messages[run.conversation_id].append(
-                        ConversationMessage(
-                            uuid4().hex, run.conversation_id, "assistant", message, now
-                        )
+                    assistant = ConversationMessage(
+                        uuid4().hex, run.conversation_id, "assistant", message, now
+                    )
+                    self._messages[run.conversation_id].append(assistant)
+                    self._append_conversation_event(
+                        run,
+                        "assistant_message",
+                        {"message_id": assistant.id, "role": "assistant", "content": message},
+                        now,
                     )
                 self._append_run_event(
                     run,
@@ -205,6 +241,7 @@ class InMemoryConversationRepository:
                     {"state": "completed", "message": message, "tool_calls": list(calls)},
                     now,
                 )
+                self._append_conversation_event(run, "run_completed", {"state": "completed"}, now)
             return run
 
     async def fail_run(self, user_id: str, run_id: str, worker_id: str, error: str) -> AgentRun:
@@ -220,6 +257,9 @@ class InMemoryConversationRepository:
                 )
                 self._runs[run_id] = run
                 self._append_run_event(run, "failed", {"state": "failed", "error": error}, now)
+                self._append_conversation_event(
+                    run, "run_failed", {"state": "failed", "error": error}, now
+                )
             return run
 
     async def cancel_run(self, user_id: str, run_id: str) -> AgentRun | None:
@@ -239,6 +279,9 @@ class InMemoryConversationRepository:
             )
             self._runs[run_id] = cancelled
             self._append_run_event(cancelled, "cancelled", {"state": "cancelled"}, now)
+            self._append_conversation_event(
+                cancelled, "run_cancelled", {"state": "cancelled"}, now
+            )
             return cancelled
 
     async def get_run(self, user_id: str, run_id: str) -> AgentRun | None:
@@ -253,6 +296,14 @@ class InMemoryConversationRepository:
                 return ()
             return tuple(event for event in self._run_events[run_id] if event.sequence > after)
 
+    async def list_conversation_events(self, user_id, conversation_id, after=0, limit=100):
+        async with self._lock:
+            conversation = self._conversations.get(conversation_id)
+            if conversation is None or conversation.user_id != user_id:
+                return ()
+            events = self._conversation_events.get(conversation_id, ())
+            return tuple(event for event in events if event.sequence > after)[:limit]
+
     def _owned_run(self, user_id: str, run_id: str) -> AgentRun:
         run = self._runs.get(run_id)
         if run is None or run.user_id != user_id:
@@ -261,7 +312,32 @@ class InMemoryConversationRepository:
 
     def _append_run_event(self, run: AgentRun, event_type: str, data, created_at) -> None:
         events = self._run_events[run.id]
-        events.append(RunEvent(len(events) + 1, run.id, event_type, data, created_at))
+        events.append(
+            RunEvent(
+                len(events) + 1,
+                run.id,
+                event_type,
+                bounded_conversation_event_data(event_type, data),
+                created_at,
+            )
+        )
+
+    def _append_conversation_event(self, run, event_type, data, created_at) -> None:
+        self._append_timeline_event(run.conversation_id, run.id, event_type, data, created_at)
+
+    def _append_timeline_event(self, conversation_id, run_id, event_type, data, created_at):
+        events = self._conversation_events[conversation_id]
+        events.append(
+            ConversationEvent(
+                len(events) + 1,
+                uuid4().hex,
+                conversation_id,
+                run_id,
+                event_type,
+                bounded_conversation_event_data(event_type, data),
+                created_at,
+            )
+        )
 
 
 __all__ = ["InMemoryConversationRepository"]

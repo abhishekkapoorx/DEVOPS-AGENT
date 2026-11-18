@@ -12,4 +12,5 @@ This glossary records the project's domain vocabulary. Add terms here as they be
 | Conversation | A user-owned, durable sequence of messages that provides context for agent interactions. | A conversation maps to one stable agent thread; it is not an authentication session. |
 | Local Account | A self-hosted identity record keyed by a normalized email address, with a password hash stored in PostgreSQL. | The email is also the user ID in local-auth mode; passwords are never stored in plaintext. |
 | Run | One execution attempt to process a user message, including its status, events, and any Tool Calls. | A retry is a distinct run only when it has a distinct idempotency key. |
+| Investigation | A read-only incident analysis started from a normalized alert and its evidence context. | It does not grant autonomous write or remediation access. |
 

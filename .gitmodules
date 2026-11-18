@@ -1,0 +1,3 @@
+[submodule "incident-investigation-lab"]
+	path = incident-investigation-lab
+	url = https://github.com/abhishekkapoorx/kubernetes-incident-investigation-lab.git

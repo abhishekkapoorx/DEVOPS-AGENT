@@ -10,22 +10,32 @@ from sqlalchemy import (
     BigInteger,
     DateTime,
     ForeignKey,
+    Index,
     JSON,
     String,
     Text,
     text,
     UniqueConstraint,
+    CheckConstraint,
     and_,
     or_,
     select,
     update,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from agent_core.conversations import Conversation, ConversationMessage
-from agent_core.runs import AgentRun, IdempotencyConflict, RunEvent, RunLeaseLost
+from agent_core.runs import (
+    AgentRun,
+    ConversationEvent,
+    IdempotencyConflict,
+    bounded_conversation_event_data,
+    RunEvent,
+    RunLeaseLost,
+)
 
 
 class Base(DeclarativeBase):
@@ -94,6 +104,158 @@ class RunEventRow(Base):
     run_id: Mapped[str] = mapped_column(ForeignKey("agent_runs.id", ondelete="CASCADE"), index=True)
     event_type: Mapped[str] = mapped_column(String(64))
     data: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class ConversationEventRow(Base):
+    __tablename__ = "conversation_events"
+    __table_args__ = (
+        Index("ix_conversation_events_conversation_sequence", "conversation_id", "sequence"),
+    )
+
+    sequence: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[str] = mapped_column(String(32), unique=True, default=lambda: uuid4().hex)
+    conversation_id: Mapped[str] = mapped_column(
+        ForeignKey("conversations.id", ondelete="CASCADE")
+    )
+    run_id: Mapped[str | None] = mapped_column(
+        ForeignKey("agent_runs.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    event_type: Mapped[str] = mapped_column(String(64))
+    data: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class RawWebhookRow(Base):
+    __tablename__ = "raw_webhooks"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: uuid4().hex)
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    headers: Mapped[dict] = mapped_column(JSONB)
+    body: Mapped[dict] = mapped_column(JSONB)
+
+
+class InvestigationRow(Base):
+    __tablename__ = "investigations"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'running', 'completed', 'completed_degraded', 'failed', 'closed')",
+            name="ck_investigations_status",
+        ),
+        Index(
+            "uq_investigations_open_fingerprint",
+            "fingerprint",
+            unique=True,
+            postgresql_where=text(
+                "status IN ('pending', 'running', 'completed', 'completed_degraded')"
+            ),
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: uuid4().hex)
+    fingerprint: Mapped[str] = mapped_column(String(64), index=True)
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    alertname: Mapped[str] = mapped_column(String(255))
+    namespace: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    workload: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    severity: Mapped[str] = mapped_column(String(64))
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    occurrence_count: Mapped[int] = mapped_column(BigInteger, default=1)
+    attempt_count: Mapped[int] = mapped_column(BigInteger, default=0)
+    max_attempts: Mapped[int] = mapped_column(BigInteger, default=3)
+    locked_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    run_after: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    slack_posted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    result: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    verifier_report: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class AlertRow(Base):
+    __tablename__ = "alerts"
+    __table_args__ = (
+        UniqueConstraint("delivery_key", name="uq_alerts_delivery_key"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: uuid4().hex)
+    fingerprint: Mapped[str] = mapped_column(String(64), index=True)
+    delivery_key: Mapped[str] = mapped_column(String(64), unique=True)
+    source: Mapped[str] = mapped_column(String(64), index=True)
+    source_fingerprint: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    alertname: Mapped[str] = mapped_column(String(255))
+    severity: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    namespace: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    workload: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    pod: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    summary: Mapped[str] = mapped_column(Text)
+    description: Mapped[str] = mapped_column(Text)
+    labels: Mapped[dict] = mapped_column(JSONB)
+    annotations: Mapped[dict] = mapped_column(JSONB)
+    raw: Mapped[dict] = mapped_column(JSONB)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    investigation_id: Mapped[str | None] = mapped_column(
+        ForeignKey("investigations.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+
+
+class AuditLogRow(Base):
+    __tablename__ = "audit_log"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: uuid4().hex)
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    actor: Mapped[str] = mapped_column(String(128))
+    action: Mapped[str] = mapped_column(String(128), index=True)
+    object_type: Mapped[str] = mapped_column(String(128))
+    object_id: Mapped[str] = mapped_column(String(128), index=True)
+    details: Mapped[dict] = mapped_column(JSONB)
+
+
+class InvestigationEvidenceRow(Base):
+    __tablename__ = "investigation_evidence"
+    __table_args__ = (
+        UniqueConstraint(
+            "investigation_id", "source", "query_hash", name="uq_investigation_evidence_query"
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: uuid4().hex)
+    investigation_id: Mapped[str] = mapped_column(
+        ForeignKey("investigations.id", ondelete="CASCADE"), index=True
+    )
+    source: Mapped[str] = mapped_column(String(128), index=True)
+    query: Mapped[str] = mapped_column(Text)
+    query_hash: Mapped[str] = mapped_column(String(64))
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    summary: Mapped[str] = mapped_column(Text)
+    raw_ref: Mapped[str] = mapped_column(String(255))
+    raw: Mapped[dict | list | str | None] = mapped_column(JSONB, nullable=True)
+    truncated: Mapped[bool] = mapped_column(default=False)
+    content_hash: Mapped[str] = mapped_column(String(64))
+
+
+class InvestigationRunRow(Base):
+    __tablename__ = "investigation_runs"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: uuid4().hex)
+    investigation_id: Mapped[str] = mapped_column(
+        ForeignKey("investigations.id", ondelete="CASCADE"), index=True
+    )
+    model: Mapped[str] = mapped_column(String(255))
+    prompt_hash: Mapped[str] = mapped_column(String(64))
+    tokens_in: Mapped[int] = mapped_column(BigInteger, default=0)
+    tokens_out: Mapped[int] = mapped_column(BigInteger, default=0)
+    cost_usd: Mapped[float] = mapped_column(default=0)
+    latency_ms: Mapped[float] = mapped_column(default=0)
+    tool_call_count: Mapped[int] = mapped_column(BigInteger, default=0)
+    outcome: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
@@ -178,7 +340,7 @@ class PostgresConversationRepository:
                 select(ConversationRow).where(
                     ConversationRow.id == conversation_id,
                     ConversationRow.user_id == user_id,
-                )
+                ).with_for_update()
             )
             if conversation is None:
                 raise LookupError("conversation not found")
@@ -191,6 +353,13 @@ class PostgresConversationRepository:
             )
             conversation.updated_at = now
             session.add(row)
+            session.add(_conversation_event(
+                conversation_id,
+                None,
+                f"{role}_message",
+                {"message_id": row.id, "role": role, "content": content},
+                now,
+            ))
             await session.commit()
         return _message(row)
 
@@ -235,7 +404,7 @@ class PostgresConversationRepository:
                     select(ConversationRow).where(
                         ConversationRow.id == conversation_id,
                         ConversationRow.user_id == user_id,
-                    )
+                    ).with_for_update()
                 )
                 if conversation is None:
                     raise LookupError("conversation not found")
@@ -295,6 +464,13 @@ class PostgresConversationRepository:
                         created_at=now,
                     )
                 )
+                session.add(_conversation_event(
+                    conversation_id, run_id, "user_message",
+                    {"message_id": message_id, "role": "user", "content": content}, now
+                ))
+                session.add(_conversation_event(
+                    conversation_id, run_id, "run_created", {"state": "pending"}, now
+                ))
                 await session.commit()
                 return _run(run), True
         except IntegrityError:
@@ -347,6 +523,18 @@ class PostgresConversationRepository:
                         created_at=now,
                     )
                 )
+                conversation = await session.scalar(
+                    select(ConversationRow)
+                    .where(ConversationRow.id == row.conversation_id)
+                    .with_for_update()
+                )
+                session.add(_conversation_event(
+                    row.conversation_id,
+                    row.id,
+                    "run_resumed" if prior_attempt else "run_started",
+                    {"state": "running", "attempt": row.attempt},
+                    now,
+                ))
                 return _run(row)
 
     async def renew_run_lease(self, worker_id: str, run_id: str, lease_seconds: int) -> bool:
@@ -375,14 +563,21 @@ class PostgresConversationRepository:
                     AgentRunRow.user_id == user_id,
                     AgentRunRow.state == "running",
                     AgentRunRow.lease_owner == worker_id,
-                )
+                ).with_for_update()
             )
             if row is None:
                 raise RunLeaseLost("run lease is no longer owned by this worker")
+            await session.scalar(
+                select(ConversationRow)
+                .where(ConversationRow.id == row.conversation_id)
+                .with_for_update()
+            )
+            bounded_data = bounded_conversation_event_data(event_type, data)
             event = RunEventRow(
-                run_id=run_id, event_type=event_type, data=dict(data), created_at=now
+                run_id=run_id, event_type=event_type, data=bounded_data, created_at=now
             )
             session.add(event)
+            session.add(_conversation_event(row.conversation_id, run_id, event_type, bounded_data, now))
             await session.commit()
             await session.refresh(event)
             return RunEvent(event.sequence, event.run_id, event.event_type, event.data, event.created_at)
@@ -396,7 +591,15 @@ class PostgresConversationRepository:
                 raise RunLeaseLost("run lease is no longer owned by this worker")
             if row.state != "completed":
                 now = datetime.now(timezone.utc)
-                calls = [dict(call) for call in tool_calls]
+                calls = [
+                    bounded_conversation_event_data("tool_call_completed", dict(call))
+                    for call in tool_calls
+                ]
+                await session.scalar(
+                    select(ConversationRow)
+                    .where(ConversationRow.id == row.conversation_id)
+                    .with_for_update()
+                )
                 row.state = "completed"
                 row.message = message
                 row.tool_calls = calls
@@ -404,15 +607,27 @@ class PostgresConversationRepository:
                 row.lease_expires_at = None
                 row.updated_at = now
                 if message:
+                    assistant_message_id = uuid4().hex
                     session.add(
                         MessageRow(
-                            id=uuid4().hex,
+                            id=assistant_message_id,
                             conversation_id=row.conversation_id,
                             role="assistant",
                             content=message,
                             created_at=now,
                         )
                     )
+                    session.add(_conversation_event(
+                        row.conversation_id,
+                        run_id,
+                        "assistant_message",
+                        {"message_id": assistant_message_id, "role": "assistant", "content": message},
+                        now,
+                    ))
+                session.add(_conversation_event(
+                    row.conversation_id, run_id, "run_completed",
+                    {"state": "completed"}, now
+                ))
                 session.add(
                     RunEventRow(
                         run_id=run_id,
@@ -433,6 +648,11 @@ class PostgresConversationRepository:
                 raise RunLeaseLost("run lease is no longer owned by this worker")
             if row.state not in {"completed", "failed"}:
                 now = datetime.now(timezone.utc)
+                await session.scalar(
+                    select(ConversationRow)
+                    .where(ConversationRow.id == row.conversation_id)
+                    .with_for_update()
+                )
                 row.state = "failed"
                 row.error = error
                 row.lease_owner = None
@@ -446,6 +666,9 @@ class PostgresConversationRepository:
                         created_at=now,
                     )
                 )
+                session.add(_conversation_event(
+                    row.conversation_id, run_id, "run_failed", {"state": "failed", "error": error}, now
+                ))
                 await session.commit()
             return _run(row)
 
@@ -460,6 +683,11 @@ class PostgresConversationRepository:
                 return None
             if row.state not in {"completed", "failed", "cancelled", "expired"}:
                 now = datetime.now(timezone.utc)
+                await session.scalar(
+                    select(ConversationRow)
+                    .where(ConversationRow.id == row.conversation_id)
+                    .with_for_update()
+                )
                 row.state = "cancelled"
                 row.lease_owner = None
                 row.lease_expires_at = None
@@ -472,6 +700,9 @@ class PostgresConversationRepository:
                         created_at=now,
                     )
                 )
+                session.add(_conversation_event(
+                    row.conversation_id, run_id, "run_cancelled", {"state": "cancelled"}, now
+                ))
                 await session.commit()
             return _run(row)
 
@@ -505,9 +736,40 @@ class PostgresConversationRepository:
             for row in rows
         )
 
+    async def list_conversation_events(self, user_id: str, conversation_id: str, after: int = 0, limit: int = 100):
+        async with self._sessions() as session:
+            owner = await session.scalar(
+                select(ConversationRow.id).where(
+                    ConversationRow.id == conversation_id,
+                    ConversationRow.user_id == user_id,
+                )
+            )
+            if owner is None:
+                return ()
+            rows = (
+                await session.scalars(
+                    select(ConversationEventRow)
+                    .where(
+                        ConversationEventRow.conversation_id == conversation_id,
+                        ConversationEventRow.sequence > after,
+                    )
+                    .order_by(ConversationEventRow.sequence)
+                    .limit(limit)
+                )
+            ).all()
+        return tuple(
+            ConversationEvent(
+                row.sequence, row.id, row.conversation_id, row.run_id,
+                row.event_type, row.data, row.created_at,
+            )
+            for row in rows
+        )
+
 async def _owned_run(session: AsyncSession, user_id: str, run_id: str) -> AgentRunRow:
     row = await session.scalar(
-        select(AgentRunRow).where(AgentRunRow.id == run_id, AgentRunRow.user_id == user_id)
+        select(AgentRunRow)
+        .where(AgentRunRow.id == run_id, AgentRunRow.user_id == user_id)
+        .with_for_update()
     )
     if row is None:
         raise LookupError("run not found")
@@ -516,6 +778,16 @@ async def _owned_run(session: AsyncSession, user_id: str, run_id: str) -> AgentR
 
 def _conversation(row: ConversationRow) -> Conversation:
     return Conversation(row.id, row.user_id, row.title, row.created_at, row.updated_at)
+
+
+def _conversation_event(conversation_id, run_id, event_type, data, created_at):
+    return ConversationEventRow(
+        conversation_id=conversation_id,
+        run_id=run_id,
+        event_type=event_type,
+        data=bounded_conversation_event_data(event_type, data),
+        created_at=created_at,
+    )
 
 
 def _message(row: MessageRow) -> ConversationMessage:

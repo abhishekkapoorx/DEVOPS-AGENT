@@ -257,6 +257,96 @@ async def test_worker_persists_streaming_model_and_redacted_tool_events():
     assert "secret-value" not in stream
     assert "never-show-this" not in stream
     assert "[REDACTED]" in stream
+    completed_tool_event = next(event for event in events if event.event_type == "tool_call_completed")
+    assert completed_tool_event.data["result"]["output"]["branch"] == "main"
+    assert completed_tool_event.data["result"]["output"]["token"] == "[REDACTED]"
+
+
+@pytest.mark.asyncio
+async def test_worker_persists_subagent_stream_activity_to_conversation_history():
+    repository = InMemoryConversationRepository()
+    conversation = await repository.create("user-1", "subagent timeline")
+    run, _ = await repository.create_or_get_run(
+        "user-1", conversation.id, "subagent-key", "subagent-hash", "inspect"
+    )
+
+    class StreamingRuntime:
+        async def run(self, request):
+            raise AssertionError("stream-capable runtime should use run_stream")
+
+        async def run_stream(self, request, *, on_event):
+            await on_event({
+                "type": "subagent_started",
+                "namespace": ["security_agent:task-1"],
+                "name": "security_agent",
+            })
+            await on_event({
+                "type": "subagent_update",
+                "namespace": ["security_agent:task-1"],
+                "node": "inspect_rules",
+                "updated_keys": ["finding_count"],
+                "result": {"finding_count": 2},
+            })
+            await on_event({
+                "type": "subagent_completed",
+                "namespace": ["security_agent:task-1"],
+                "name": "security_agent",
+                "status": "completed",
+            })
+            return AgentResponse(message="Analysis complete.")
+
+    await AgentRunWorker(runtime=StreamingRuntime(), conversations=repository, runs=repository).run_once()
+
+    events = await repository.list_conversation_events("user-1", conversation.id)
+    subagent_events = [event for event in events if event.event_type.startswith("subagent_")]
+    assert [event.event_type for event in subagent_events] == [
+        "subagent_started", "subagent_update", "subagent_completed"
+    ]
+    assert [event.sequence for event in events] == sorted(event.sequence for event in events)
+    assert subagent_events[0].data["namespace"] == ["security_agent:task-1"]
+    assert subagent_events[1].data["result"] == {"finding_count": 2}
+
+
+@pytest.mark.asyncio
+async def test_conversation_timeline_bounds_large_tool_output_copies():
+    repository = InMemoryConversationRepository()
+    conversation = await repository.create("user-1", "bounded timeline")
+    run, _ = await repository.create_or_get_run(
+        "user-1", conversation.id, "bounded-key", "bounded-hash", "inspect"
+    )
+    await repository.claim_next_run("worker-1", 60)
+    await repository.append_run_event(
+        "user-1",
+        run.id,
+        "worker-1",
+        "tool_call_completed",
+        {
+            "call_id": "large-output",
+            "name": "files.read",
+            "status": "succeeded",
+            "result": {"output": {"content": "x" * 20_000}},
+        },
+    )
+    await repository.append_run_event(
+        "user-1",
+        run.id,
+        "worker-1",
+        "graph_step",
+        {"node": "inspect", "result": {"details": "y" * 20_000}},
+    )
+
+    events = await repository.list_conversation_events("user-1", conversation.id)
+    result = next(event for event in events if event.event_type == "tool_call_completed")
+    bounded_output = result.data["result"]["output"]
+
+    assert bounded_output["truncated"] is True
+    assert bounded_output["original_chars"] > 16_000
+    assert len(bounded_output["preview"]) == 16_000
+    graph_result = next(event for event in events if event.event_type == "graph_step")
+    assert graph_result.data["result"]["truncated"] is True
+    run_events = await repository.list_run_events("user-1", run.id)
+    persisted_graph_result = next(event for event in run_events if event.event_type == "graph_step")
+    assert persisted_graph_result.data["result"]["truncated"] is True
 
 
 @pytest.mark.asyncio

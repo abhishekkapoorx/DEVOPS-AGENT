@@ -5,9 +5,11 @@ from pathlib import Path
 from agent_server.persistence.postgres import (
     AgentRunRow,
     Base,
+    ConversationEventRow,
     ConversationRow,
     MessageRow,
     PostgresConversationRepository,
+    RawWebhookRow,
     RunEventRow,
 )
 
@@ -23,6 +25,36 @@ def test_postgres_metadata_contains_idempotency_and_restart_lease_fields():
     )
     assert RunEventRow.__tablename__ == "run_events"
     assert AgentRunRow.__tablename__ == "agent_runs"
+    assert "conversation_events" in Base.metadata.tables
+    assert ConversationEventRow.__tablename__ == "conversation_events"
+    assert RawWebhookRow.__tablename__ == "raw_webhooks"
+    assert {"id", "received_at", "headers", "body"} <= set(
+        RawWebhookRow.__table__.columns.keys()
+    )
+
+
+def test_conversation_event_migration_backfills_existing_messages_and_run_events():
+    migration_path = Path("migrations/versions/0008_conversation_events.py")
+    source = migration_path.read_text(encoding="utf-8")
+    module = ast.parse(source)
+    assignments = {
+        item.targets[0].id: ast.literal_eval(item.value)
+        for item in module.body
+        if isinstance(item, ast.Assign)
+        and len(item.targets) == 1
+        and isinstance(item.targets[0], ast.Name)
+        and item.targets[0].id in {"revision", "down_revision"}
+    }
+
+    assert assignments == {
+        "revision": "0008_conversation_events",
+        "down_revision": "0007_durable_approvals",
+    }
+    assert "FROM conversation_messages" in source
+    assert "FROM run_events" in source
+    assert "ORDER BY created_at" in source
+    assert "'{result,output}'" in source
+    assert "16000" in source
 
 
 def test_run_migration_follows_auth_and_creates_leased_run_tables():
@@ -83,3 +115,6 @@ def test_run_persistence_flushes_user_message_before_dependent_run():
     assert created is True
     assert run.input_message == "hi"
     assert session.flushes[:2] == [(MessageRow,), (AgentRunRow,)]
+    timeline = [row for row in session.pending if isinstance(row, ConversationEventRow)]
+    assert [row.event_type for row in timeline] == ["user_message", "run_created"]
+    assert timeline[0].data["message_id"] == run.message_id

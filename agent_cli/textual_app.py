@@ -17,12 +17,14 @@ from rich.text import Text
 from agent_core.conversations import DEFAULT_CONVERSATION_TITLE
 from textual import work
 from textual.app import App, ComposeResult
+from textual.binding import Binding
 from textual.screen import ModalScreen
 from textual.containers import Horizontal, Vertical
 from textual.widgets import Button, Footer, Header, Input, OptionList, Static
 
 from .auth import DeviceLogin, TokenResponse
 from .local_state import ConversationSelectionStore, JsonConversationSelectionStore
+from .tool_activity import ToolActivityCard
 
 
 class ConversationClient(Protocol):
@@ -30,6 +32,7 @@ class ConversationClient(Protocol):
     def create_conversation(self, title: str = "New conversation") -> dict[str, Any]: ...
     def rename_conversation(self, conversation_id: str, title: str) -> dict[str, Any]: ...
     def list_messages(self, conversation_id: str) -> list[dict[str, Any]]: ...
+    def list_conversation_events(self, conversation_id: str) -> list[dict[str, Any]]: ...
     def cancel_run(self, run_id: str) -> dict[str, Any]: ...
     def ask(self, message: str, *, conversation_id: str | None = None, on_event=None) -> dict[str, Any]: ...
 
@@ -136,6 +139,8 @@ class TextualAgentApp(App[None]):
     #status { height: 1; color: $text-muted; }
     #run-status { height: auto; max-height: 6; overflow-y: auto; color: $text-muted; padding: 0 2; }
     #messages { height: 1fr; overflow-y: auto; padding: 1 2; }
+    .activity-step { height: auto; margin: 0 0 1 0; padding: 0 1; color: $text-muted; }
+    .agent-thinking { text-style: italic; }
     #message { dock: bottom; margin: 0 1 1 1; }
     .entry { height: auto; margin-bottom: 1; }
     """
@@ -144,8 +149,8 @@ class TextualAgentApp(App[None]):
         ("ctrl+q", "quit", "Quit"),
         ("ctrl+alt+n", "new_chat", "New chat"),
         ("ctrl+alt+r", "change_chat", "Change chat"),
-        ("ctrl+alt+c", "copy_chat", "Copy chat"),
-        ("ctrl+alt+e", "export_chat", "Export chat"),
+        Binding("ctrl+alt+c", "copy_chat", "Copy chat", show=False),
+        Binding("ctrl+alt+e", "export_chat", "Export chat", show=False),
         ("ctrl+alt+l", "logout", "Log out"),
     ]
 
@@ -166,7 +171,9 @@ class TextualAgentApp(App[None]):
         self.active_run_id: str | None = None
         self._run_in_progress = False
         self._run_status_label = ""
-        self._tool_statuses: dict[str, str] = {}
+        self._tool_activity_cards: dict[str, ToolActivityCard] = {}
+        self._subagent_output_text: dict[str, str] = {}
+        self._agent_thinking: Static | None = None
         self._assistant_bubble: Static | None = None
         self._assistant_content = ""
         self.commands: dict[str, tuple[str, Command]] = {
@@ -373,13 +380,40 @@ class TextualAgentApp(App[None]):
     async def _load_messages(self) -> None:
         if self.client is None or self.selected_conversation_id is None:
             return
-        messages = await asyncio.to_thread(self.client.list_messages, self.selected_conversation_id)
+        list_events = getattr(self.client, "list_conversation_events", None)
+        timeline = await asyncio.to_thread(
+            list_events if list_events else self.client.list_messages,
+            self.selected_conversation_id,
+        )
         container = self.query_one("#messages", Vertical)
         await container.remove_children()
-        for message in messages:
-            role = str(message.get("role", "assistant")).capitalize()
-            content = str(message.get("content", ""))
-            await container.mount(self._make_message(role, content))
+        self._assistant_bubble = None
+        self._assistant_content = ""
+        self._agent_thinking = None
+        self._tool_activity_cards.clear()
+        self._subagent_output_text.clear()
+        if not timeline or "type" not in timeline[0]:
+            for message in timeline:
+                role = str(message.get("role", "assistant")).capitalize()
+                content = str(message.get("content", ""))
+                await container.mount(self._make_message(role, content))
+            return
+
+        streamed_runs = {
+            str(event.get("run_id"))
+            for event in timeline
+            if event.get("type") == "agent_delta"
+            and event.get("run_id")
+            and isinstance(event.get("data"), dict)
+            and not event["data"].get("namespace")
+        }
+        for event in timeline:
+            if (
+                event.get("type") == "assistant_message"
+                and str(event.get("run_id") or "") in streamed_runs
+            ):
+                continue
+            await self._handle_agent_event(event)
 
     def _make_message(self, role: str, content: str) -> Static:
         if role.lower() == "assistant":
@@ -415,20 +449,24 @@ class TextualAgentApp(App[None]):
         container = self.query_one("#messages", Vertical)
         await container.mount(self._make_message("You", content))
         self._assistant_content = ""
-        self._assistant_bubble = Static(Markdown(""), classes="entry")
-        await container.mount(self._assistant_bubble)
+        self._assistant_bubble = None
+        self._agent_thinking = Static(
+            Text("Agent is thinking…"), classes="activity-step agent-thinking", id="agent-thinking"
+        )
+        await container.mount(self._agent_thinking)
         self.active_run_id = None
         self._run_in_progress = True
-        self._run_status_label = "Agent is thinking…"
-        self._tool_statuses.clear()
+        self._run_status_label = ""
+        self._tool_activity_cards.clear()
         self._refresh_run_status()
-        self.query_one("#status", Static).update("Thinking…")
+        self.query_one("#status", Static).update("Run in progress")
         try:
             result = await asyncio.to_thread(self.client.ask, content,
                 conversation_id=self.selected_conversation_id, on_event=self._on_agent_event)
             final = str(result.get("message", ""))
             if final and not self._assistant_content:
-                self._append_assistant(final)
+                await self._set_assistant(final)
+            await self._remove_agent_thinking()
             self._run_status_label = "Run completed"
             self._refresh_run_status()
             self._run_in_progress = False
@@ -436,6 +474,7 @@ class TextualAgentApp(App[None]):
             if self._pending_auto_title:
                 await self._refresh_auto_title()
         except Exception as error:
+            await self._remove_agent_thinking()
             self._run_status_label = f"Run failed: {error}"
             self._refresh_run_status()
             self._run_in_progress = False
@@ -575,41 +614,133 @@ class TextualAgentApp(App[None]):
             f"Approve in browser: {url} · code {code}")
 
     def _on_agent_event(self, event: dict[str, Any]) -> None:
+        self.call_from_thread(self._handle_agent_event, event)
+
+    async def _handle_agent_event(self, event: dict[str, Any]) -> None:
         kind = event.get("type")
         data = event.get("data") if isinstance(event.get("data"), dict) else event
         if event.get("run_id"):
-            self.call_from_thread(setattr, self, "active_run_id", str(event["run_id"]))
-        if kind == "agent_delta":
-            self.call_from_thread(self._append_assistant, str(data.get("text", event.get("text", ""))))
-        elif kind in {"tool_call_started", "tool_call_completed"}:
-            name = data.get("name", "tool")
-            status = "running" if kind == "tool_call_started" else data.get("status", "completed")
-            call_id = str(data.get("call_id") or name)
-            self.call_from_thread(self._set_tool_status, call_id, str(name), str(status))
+            self.active_run_id = str(event["run_id"])
+        if kind == "user_message":
+            self._assistant_bubble = None
+            self._assistant_content = ""
+            await self.query_one("#messages", Vertical).mount(
+                self._make_message("User", str(data.get("content", "")))
+            )
+        elif kind == "assistant_message":
+            self._assistant_bubble = None
+            await self._set_assistant(str(data.get("content", "")))
+        elif kind == "agent_delta":
+            await self._remove_agent_thinking()
+            fragment = str(data.get("text", event.get("text", "")))
+            namespace = data.get("namespace")
+            if isinstance(namespace, list) and namespace:
+                await self._append_subagent_delta(namespace, fragment)
+            else:
+                await self._append_assistant(fragment)
+        elif kind == "tool_call_started":
+            await self._remove_agent_thinking()
+            self._assistant_bubble = None
+            self._assistant_content = ""
+            call_id = str(data.get("call_id") or data.get("name", "tool"))
+            card = ToolActivityCard(call_id, str(data.get("name", "tool")), "running")
+            self._tool_activity_cards[call_id] = card
+            await self.query_one("#messages", Vertical).mount(card)
+        elif kind == "tool_call_completed":
+            call_id = str(data.get("call_id") or data.get("name", "tool"))
+            card = self._tool_activity_cards.get(call_id)
+            if card is None:
+                card = ToolActivityCard(call_id, str(data.get("name", "tool")))
+                self._tool_activity_cards[call_id] = card
+                await self.query_one("#messages", Vertical).mount(card)
+            result = data.get("result")
+            card.update_result(str(data.get("status", "completed")), result)
+            await self._show_agent_thinking("Agent is continuing…")
         elif kind == "agent_message":
-            self.call_from_thread(self._set_assistant, str(event.get("message", "")))
-
-    def _set_tool_status(self, call_id: str, name: str, status: str) -> None:
-        self._tool_statuses[call_id] = f"{name}: {status}"
-        self._refresh_run_status()
+            await self._remove_agent_thinking()
+            if not self._assistant_content:
+                await self._set_assistant(str(event.get("message", "")))
+        elif kind in {"subagent_started", "subagent_update", "subagent_completed"}:
+            namespace = data.get("namespace")
+            key = "/".join(str(part) for part in namespace) if isinstance(namespace, list) else str(data.get("name", "agent"))
+            activity_id = f"subagent-{key}"
+            card = self._tool_activity_cards.get(activity_id)
+            if card is None:
+                card = ToolActivityCard(activity_id, str(data.get("name", "Sub-agent")))
+                self._tool_activity_cards[activity_id] = card
+                await self.query_one("#messages", Vertical).mount(card)
+            if kind == "subagent_update":
+                card.update_result(
+                    "working",
+                    {
+                        "output": data.get("result") or {
+                            "node": data.get("node"),
+                            "updated_keys": data.get("updated_keys", []),
+                        }
+                    },
+                )
+            elif kind == "subagent_completed":
+                result = data.get("result")
+                if result is None and self._subagent_output_text.get(key):
+                    result = {"output": self._subagent_output_text[key]}
+                card.update_result(str(data.get("status", "completed")), result)
+        elif kind == "graph_step":
+            node = str(data.get("node", "Agent"))
+            activity_id = f"graph-step-{self.active_run_id or 'run'}-{node}"
+            card = self._tool_activity_cards.get(activity_id)
+            if card is None:
+                card = ToolActivityCard(activity_id, f"Agent · {node}", "updated")
+                self._tool_activity_cards[activity_id] = card
+                await self.query_one("#messages", Vertical).mount(card)
+            card.update_result("updated", {"output": data.get("result", {})})
 
     def _refresh_run_status(self) -> None:
-        lines = [self._run_status_label] if self._run_status_label else []
-        lines.extend(self._tool_statuses.values())
-        self._update_run_status("\n".join(lines))
+        self._update_run_status(self._run_status_label)
 
     def _update_run_status(self, message: str) -> None:
         self.query_one("#run-status", Static).update(message)
 
-    def _append_assistant(self, fragment: str) -> None:
+    async def _append_assistant(self, fragment: str) -> None:
+        if not fragment:
+            return
         self._assistant_content += fragment
-        if self._assistant_bubble is not None:
+        if self._assistant_bubble is None:
+            self._assistant_bubble = Static(Markdown(self._assistant_content), classes="entry")
+            await self.query_one("#messages", Vertical).mount(self._assistant_bubble)
+        else:
             self._assistant_bubble.update(Markdown(self._assistant_content))
 
-    def _set_assistant(self, content: str) -> None:
+    async def _set_assistant(self, content: str) -> None:
         self._assistant_content = content
-        if self._assistant_bubble is not None:
+        if self._assistant_bubble is None:
+            self._assistant_bubble = Static(Markdown(content), classes="entry")
+            await self.query_one("#messages", Vertical).mount(self._assistant_bubble)
+        else:
             self._assistant_bubble.update(Markdown(content))
+
+    async def _show_agent_thinking(self, label: str) -> None:
+        await self._remove_agent_thinking()
+        self._agent_thinking = Static(
+            Text(label), classes="activity-step agent-thinking", id="agent-thinking"
+        )
+        await self.query_one("#messages", Vertical).mount(self._agent_thinking)
+
+    async def _append_subagent_delta(self, namespace: list[Any], fragment: str) -> None:
+        key = "/".join(str(part) for part in namespace)
+        activity_id = f"subagent-{key}"
+        card = self._tool_activity_cards.get(activity_id)
+        if card is None:
+            card = ToolActivityCard(activity_id, key.split(":", 1)[0] or "Sub-agent")
+            self._tool_activity_cards[activity_id] = card
+            await self.query_one("#messages", Vertical).mount(card)
+        output = self._subagent_output_text.get(key, "") + fragment
+        self._subagent_output_text[key] = output
+        card.update_result("working", {"output": output})
+
+    async def _remove_agent_thinking(self) -> None:
+        if self._agent_thinking is not None and self._agent_thinking.is_mounted:
+            await self._agent_thinking.remove()
+        self._agent_thinking = None
 
 
 def run_textual_app(auth: DeviceLogin, client_factory, on_signed_in=None) -> None:

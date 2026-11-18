@@ -1,0 +1,40 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: incident-investigation-scenarios
+  namespace: monitoring
+spec:
+  groups:
+    - name: incident-investigation-scenarios
+      interval: 15s
+      rules:
+        - alert: KubePodCrashLooping
+          expr: kube_pod_container_status_waiting_reason{namespace=~"default|boutique",reason="CrashLoopBackOff"} == 1
+          for: 30s
+          labels: {severity: critical, namespace: "{{ $labels.namespace }}", deployment: "{{ $labels.pod }}"}
+          annotations: {summary: "{{ $labels.pod }} is crash looping", description: "Pod {{ $labels.pod }} is in CrashLoopBackOff."}
+        - alert: KubeContainerOOMKilled
+          expr: kube_pod_container_status_last_terminated_reason{namespace=~"default|boutique",reason="OOMKilled"} == 1
+          for: 30s
+          labels: {severity: critical, namespace: "{{ $labels.namespace }}", deployment: "{{ $labels.pod }}"}
+          annotations: {summary: "{{ $labels.pod }} was OOM killed", description: "Pod {{ $labels.pod }} exceeded its memory limit."}
+        - alert: KubePodNotReady
+          expr: kube_pod_container_status_waiting_reason{namespace=~"default|boutique",reason=~"ImagePullBackOff|ErrImagePull"} == 1
+          for: 30s
+          labels: {severity: critical, namespace: "{{ $labels.namespace }}", deployment: "{{ $labels.pod }}"}
+          annotations: {summary: "{{ $labels.pod }} cannot pull its image", description: "Pod is waiting with ImagePullBackOff or ErrImagePull."}
+        - alert: ServiceNoEndpoints
+          expr: kube_endpoint_address_available{namespace=~"default|boutique"} == 0
+          for: 30s
+          labels: {severity: critical, namespace: "{{ $labels.namespace }}", deployment: "{{ $labels.endpoint }}"}
+          annotations: {summary: "{{ $labels.endpoint }} has no ready endpoints", description: "The Service has no ready endpoints."}
+        - alert: KubePodNotReady
+          expr: kube_pod_status_ready{namespace=~"default|boutique",condition="false"} == 1
+          for: 30s
+          labels: {severity: critical, namespace: "{{ $labels.namespace }}", deployment: "{{ $labels.pod }}"}
+          annotations: {summary: "{{ $labels.pod }} is not ready", description: "The pod readiness condition is false."}
+        - alert: KubeDeploymentReplicasMismatch
+          expr: kube_deployment_status_replicas_available{namespace=~"default|boutique"} < kube_deployment_spec_replicas{namespace=~"default|boutique"}
+          for: 30s
+          labels: {severity: warning, namespace: "{{ $labels.namespace }}", deployment: "{{ $labels.deployment }}"}
+          annotations: {summary: "{{ $labels.deployment }} replicas are unavailable", description: "Available replicas are below the desired count."}

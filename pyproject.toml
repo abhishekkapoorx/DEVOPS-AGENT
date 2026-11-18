@@ -20,6 +20,9 @@ server = [
     "argon2-cffi>=23.1,<26",
     "asyncpg>=0.30,<1",
     "fastapi>=0.119,<1",
+    "httpx>=0.27,<1",
+    "kubernetes-asyncio>=29,<30",
+    "jinja2>=3.1,<4",
     "langchain>=1,<2",
     "langchain-core>=1,<2",
     "langchain-google-genai>=3,<4",
@@ -42,6 +45,14 @@ test = [
 [project.scripts]
 devops-agent = "agent_cli.__main__:main"
 devops-agent-tools = "agent_cli.tool_service:main"
+
+[tool.pytest.ini_options]
+asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "postgres: requires TEST_DATABASE_URL and a disposable PostgreSQL database",
+    "kind: requires a live kind Kubernetes cluster",
+    "live_llm: requires configured live LLM credentials",
+]
 
 [tool.setuptools.packages.find]
 include = ["agent_protocol*", "agent_cli*"]

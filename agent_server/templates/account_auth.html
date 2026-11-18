@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+
+{% block content %}
+<main class="page-card" aria-labelledby="auth-title">
+  <p class="eyebrow">DevOps Agent / Account</p>
+  <h1 id="auth-title">{{ title }}</h1>
+  {% if message %}<p class="notice" role="alert">{{ message }}</p>{% endif %}
+  <p class="intro">Use your self-hosted account to approve this device sign-in.</p>
+  <nav class="account-tabs" aria-label="Account actions">
+    <a href="{{ signin_url }}" {% if mode == "signin" %}aria-current="page"{% endif %}>Sign in</a>
+    <a href="{{ signup_url }}" {% if mode == "signup" %}aria-current="page"{% endif %}>Create account</a>
+  </nav>
+  <form method="post" action="{{ action_url }}">
+    <input type="hidden" name="user_code" value="{{ user_code }}">
+    <input type='hidden' name='mode' value='{{ mode }}'>
+    <label class="field">Email address
+      <input type="email" name='email' autocomplete="email" placeholder="you@example.com" required maxlength="254">
+    </label>
+    <label class="field">Password
+      <input type="password" name="password" autocomplete="{{ password_autocomplete }}" required minlength="12" maxlength="1024">
+      <span class="hint">{{ password_hint }}</span>
+    </label>
+    <button type="submit">{{ submit_label }}</button>
+  </form>
+  <p class="fine-print">Email verification and password recovery are not configured.</p>
+</main>
+{% endblock %}
