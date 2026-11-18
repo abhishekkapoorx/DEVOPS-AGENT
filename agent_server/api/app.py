@@ -27,6 +27,7 @@ from agent_server.conversation_titles import ConversationTitleGenerator
 from agent_server.local_tool_broker import LocalToolBroker
 from .auth_routes import create_auth_router
 from .settings import create_settings_router
+from .website import create_website_router
 from .webhook import create_webhook_router
 from agent_server.observability import CorrelationMetricsMiddleware, HttpMetrics, InMemoryRateLimiter
 from .security import require_authenticated_user
@@ -145,6 +146,7 @@ def create_app(
                     await database_engine.dispose()
 
     app = FastAPI(title="DevOps Agent API", version="1", lifespan=lifespan)
+    app.include_router(create_website_router(Path(__file__).resolve().parent.parent / "templates"))
     request_metrics = metrics or HttpMetrics()
     limiter = rate_limiter or InMemoryRateLimiter()
     app.state.metrics = request_metrics

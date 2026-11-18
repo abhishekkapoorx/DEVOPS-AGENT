@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign in | DevOps Agent</title>
+  <style>
+    :root { color-scheme:dark; --bg:#090b12; --panel:#111827; --line:#293650; --text:#f4f7fb; --muted:#9aa8bd; --blue:#72a8ff; }
+    * { box-sizing:border-box; } body { display:grid; min-height:100vh; place-items:center; margin:0; padding:20px; color:var(--text); background:radial-gradient(circle at 50% 0,#1b3158,transparent 32rem),var(--bg); font:15px/1.5 Inter,system-ui,sans-serif; }
+    .card { width:min(100%,460px); padding:32px; border:1px solid var(--line); border-radius:18px; background:#111827ee; box-shadow:0 30px 90px #0008; }
+    a { color:var(--blue); } h1 { margin:0 0 8px; letter-spacing:-.04em; } p { color:var(--muted); } button { width:100%; margin-top:10px; padding:13px 16px; border:1px solid var(--blue); border-radius:9px; background:var(--blue); color:#08111e; font-weight:750; cursor:pointer; } button.secondary { border-color:var(--line); background:#172238; color:var(--text); } #message { min-height:22px; color:#ffb9b9; }
+  </style>
+</head>
+<body><main class="card"><p>DevOps Agent / Account</p><h1>Open your workspace</h1><p>Sign in to view investigations and manage Alertmanager and provider secrets.</p><div id="message"></div><button onclick="start('signin')">Sign in</button><button class="secondary" onclick="start('signup')">Create an account</button><p><a href="/">Back to home</a></p></main>
+<script>
+async function start(mode) {
+  const message = document.getElementById('message');
+  message.textContent = 'Preparing secure sign-in…';
+  try {
+    const response = await fetch('/v1/auth/device', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({mode})});
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || 'Unable to start sign-in');
+    window.location.href = data.verification_url;
+  } catch (error) { message.textContent = error.message; }
+}
+</script>
+</body></html>
