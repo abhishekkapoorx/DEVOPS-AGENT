@@ -32,6 +32,7 @@ alertmanager:
       group_interval: 30s
       repeat_interval: 30m
     receivers:
+      - name: "null"
       - name: incident-investigation-webhook
         webhook_configs:
           - url: http://host.docker.internal:8000/webhook/alertmanager
@@ -44,7 +45,7 @@ alertmanager:
 kubeStateMetrics:
   enabled: true
 
-prometheus-node-exporter:
+nodeExporter:
   enabled: false
 
 defaultRules:
