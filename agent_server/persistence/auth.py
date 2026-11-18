@@ -170,6 +170,12 @@ class PostgresAuthRepository:
             )
         return _auth_session(row) if row else None
 
+    async def create_session(self, session: AuthSession) -> None:
+        """Persist a browser-issued session outside the CLI device transaction."""
+        async with self._sessions() as db_session:
+            db_session.add(_session_row(session))
+            await db_session.commit()
+
     async def rotate_session(
         self, old: AuthSession, replacement: AuthSession, at: datetime
     ) -> bool:
