@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from urllib.parse import urlencode
 from uuid import uuid4
 
 from .auth_sessions import DeviceApproval, DeviceMode, DevicePresentation
@@ -43,7 +44,10 @@ class InProcessDeviceApprovalProvider:
         self._pending[approval_id] = PendingApproval(user_code, mode, expires_at)
         return DevicePresentation(
             approval_id=approval_id,
-            verification_url=f"{self._base_url}{self._verification_path}/{approval_id}",
+            verification_url=(
+                f"{self._base_url}{self._verification_path}/{approval_id}?"
+                f"{urlencode({'user_code': user_code})}"
+            ),
         )
 
     async def get_device_approval(self, approval_id: str) -> DeviceApproval | None:

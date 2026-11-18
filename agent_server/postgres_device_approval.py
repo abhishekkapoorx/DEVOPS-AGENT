@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from urllib.parse import urlencode
 from uuid import uuid4
 
 from .auth_sessions import DeviceApproval, DeviceMode, DevicePresentation
@@ -21,7 +22,10 @@ class PostgresDeviceApprovalProvider:
         approval_id = uuid4().hex
         return DevicePresentation(
             approval_id=approval_id,
-            verification_url=f"{self._base_url}/v1/auth/device/verify/{approval_id}",
+            verification_url=(
+                f"{self._base_url}/v1/auth/device/verify/{approval_id}?"
+                f"{urlencode({'user_code': user_code})}"
+            ),
         )
 
     async def pending(self, approval_id: str) -> PendingApproval | None:
