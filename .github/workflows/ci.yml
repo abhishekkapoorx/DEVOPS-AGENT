@@ -25,6 +25,8 @@ jobs:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/devops_agent
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
