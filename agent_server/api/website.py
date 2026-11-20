@@ -23,14 +23,22 @@ def create_website_router(
 
     @router.get("/", include_in_schema=False)
     async def landing_page(request: Request):
+        authenticated = bool(
+            auth_service
+            and auth_service.current_user(request.cookies.get("devops_access_token", ""))
+        )
         return templates.TemplateResponse(
             request=request,
             name="landing.html",
-            context={"title": "Trustworthy incident investigations"},
+            context={"title": "Trustworthy incident investigations", "authenticated": authenticated},
         )
 
     @router.get("/login", include_in_schema=False)
     async def login_page(request: Request, mode: str = "signin"):
+        if auth_service is not None:
+            user = auth_service.current_user(request.cookies.get("devops_access_token", ""))
+            if user is not None:
+                return RedirectResponse("/settings", status_code=status.HTTP_303_SEE_OTHER)
         return templates.TemplateResponse(
             request=request,
             name="login.html",
@@ -52,6 +60,10 @@ def create_website_router(
         email: str = Form(),
         password: str = Form(),
     ):
+        if auth_service is not None:
+            user = auth_service.current_user(request.cookies.get("devops_access_token", ""))
+            if user is not None:
+                return RedirectResponse("/settings", status_code=status.HTTP_303_SEE_OTHER)
         if accounts is None:
             raise HTTPException(status_code=503, detail="Website authentication is unavailable")
         try:
@@ -95,6 +107,47 @@ def create_website_router(
         if auth_service is None:
             raise HTTPException(status_code=503, detail="Website authentication is unavailable")
         return (await auth_service.issue_browser_session(user_id)).model_dump()
+
+    @router.get("/account", include_in_schema=False)
+    async def account_page(request: Request):
+        if accounts is None or auth_service is None:
+            raise HTTPException(status_code=503, detail="Website authentication is unavailable")
+        user = auth_service.current_user(request.cookies.get("devops_access_token", ""))
+        if user is None:
+            return RedirectResponse("/login", status_code=status.HTTP_303_SEE_OTHER)
+        account = await accounts.get_profile(user.user_id)
+        if account is None:
+            raise HTTPException(status_code=404, detail="Account not found")
+        return templates.TemplateResponse(
+            request=request,
+            name="account.html",
+            context={"title": "Account", "account": account, "message": None},
+        )
+
+    @router.post("/account", include_in_schema=False)
+    async def update_account(request: Request, display_name: str = Form(default="")):
+        if accounts is None or auth_service is None:
+            raise HTTPException(status_code=503, detail="Website authentication is unavailable")
+        user = auth_service.current_user(request.cookies.get("devops_access_token", ""))
+        if user is None:
+            return RedirectResponse("/login", status_code=status.HTTP_303_SEE_OTHER)
+        try:
+            account = await accounts.update_profile(user.user_id, display_name)
+        except AccountError as error:
+            account = await accounts.get_profile(user.user_id)
+            if account is None:
+                raise HTTPException(status_code=404, detail="Account not found")
+            return templates.TemplateResponse(
+                request=request,
+                name="account.html",
+                context={"title": "Account", "account": account, "message": str(error)},
+                status_code=400,
+            )
+        return templates.TemplateResponse(
+            request=request,
+            name="account.html",
+            context={"title": "Account", "account": account, "message": "Account details updated."},
+        )
 
     return router
 

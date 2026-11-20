@@ -1,6 +1,7 @@
 import asyncio
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from fastapi import FastAPI
@@ -86,7 +87,9 @@ def test_development_approval_provider_completes_a_device_decision():
         expires_at=datetime.now(timezone.utc) + timedelta(minutes=1),
     ))
 
-    assert presentation.verification_url.endswith(presentation.approval_id)
+    parsed_url = urlsplit(presentation.verification_url)
+    assert parsed_url.path.endswith(presentation.approval_id)
+    assert parse_qs(parsed_url.query)["user_code"] == ["ABCD-1234"]
     assert provider.decide(
         presentation.approval_id,
         user_code="ABCD-1234",

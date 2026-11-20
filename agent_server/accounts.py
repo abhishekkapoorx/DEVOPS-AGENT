@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import re
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Protocol
 
 from argon2 import PasswordHasher
@@ -19,11 +20,14 @@ _MAX_EMAIL_LENGTH = 254
 class LocalAccount:
     email: str
     password_hash: str
+    created_at: datetime | None = None
+    display_name: str | None = None
 
 
 class LocalAccountRepository(Protocol):
     async def create_local_account(self, email: str, password_hash: str) -> LocalAccount: ...
     async def get_local_account(self, email: str) -> LocalAccount | None: ...
+    async def update_local_account(self, email: str, display_name: str | None) -> LocalAccount | None: ...
 
 
 class AccountError(ValueError):
@@ -75,6 +79,19 @@ class LocalAccountService:
         if account is None or not valid:
             raise InvalidCredentials("Invalid email or password")
         return account.email
+
+    async def get_profile(self, email: str) -> LocalAccount | None:
+        return await self.repository.get_local_account(_normalize_email(email))
+
+    async def update_profile(self, email: str, display_name: str | None) -> LocalAccount:
+        normalized = _normalize_email(email)
+        clean_name = display_name.strip() if display_name else None
+        if clean_name and len(clean_name) > 120:
+            raise AccountError("Display name must be 120 characters or fewer")
+        account = await self.repository.update_local_account(normalized, clean_name or None)
+        if account is None:
+            raise AccountError("Account not found")
+        return account
 
 
 def _normalize_email(email: str) -> str:

@@ -1,5 +1,5 @@
-{% extends "base.html" %}
-{% block content %}
+{% extends "settings_base.html" %}
+{% block settings_content %}
 <main class="page-card wide" aria-labelledby="investigation-title">
   <p class="eyebrow">DevOps Agent / Investigation report</p>
   <h1 id="investigation-title">{{ report.alertname }}</h1>
@@ -10,6 +10,6 @@
   <ol>{% for item in report.evidence %}<li id="{{ item.id }}"><strong>{{ item.id }}</strong> · {{ item.source }}<br>{{ item.summary }}</li>{% else %}<li>No evidence persisted.</li>{% endfor %}</ol>
   <h2>Verification</h2>
   <p>Kept {{ report.verifier_report.get("claims_kept", 0) }} of {{ report.verifier_report.get("claims_total", 0) }} claims; grounded rate {{ (report.verifier_report.get("grounded_claim_rate", 0) * 100)|round(0) }}%.</p>
-  <p class="fine-print">READ-ONLY analysis. No actions were taken. <a href="/investigations">Back to investigations</a></p>
+  <p class="fine-print">READ-ONLY analysis. No actions were taken.</p>
 </main>
 {% endblock %}
