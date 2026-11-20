@@ -1,5 +1,5 @@
-{% extends "base.html" %}
-{% block content %}
+{% extends "settings_base.html" %}
+{% block settings_content %}
 <main class="page-card wide" aria-labelledby="settings-title">
   <p class="eyebrow">DevOps Agent / Integrations</p>
   <h1 id="settings-title">Secrets and webhooks</h1>
@@ -22,6 +22,5 @@
     <button type="submit">Save encrypted secret</button>
   </form>
   <ul>{% for item in resources %}<li>{{ item.provider }}/{{ item.name }} <small>{{ item.updated_at }}</small><form method="post" action="/settings/resource-secrets/{{ item.id }}/delete"><button class="secondary" type="submit">Delete</button></form></li>{% else %}<li>No provider secrets.</li>{% endfor %}</ul>
-  <p class="fine-print"><a href="/investigations">View investigations</a></p>
 </main>
 {% endblock %}

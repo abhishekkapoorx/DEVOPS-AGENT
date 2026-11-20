@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block body_class %}settings-body{% endblock %}
+{% block content %}
+<div class="settings-shell">
+  <header class="settings-topbar">
+    <a class="settings-brand" href="/">DevOps Agent <span>control plane</span></a>
+    <nav class="settings-topnav" aria-label="Primary navigation">
+      <a href="/settings">Settings</a>
+      <a href="/investigations">Investigations</a>
+      <a href="/login">Sign out</a>
+    </nav>
+  </header>
+  <div class="settings-frame">
+    <aside class="settings-sidebar" aria-label="Settings navigation">
+      <p class="sidebar-label">Workspace</p>
+      <nav class="settings-nav">
+        <a href="/settings" class="{% if request.url.path == '/settings' %}is-active{% endif %}" {% if request.url.path == '/settings' %}aria-current="page"{% endif %}>
+          <span>Integrations</span><small>Secrets &amp; webhooks</small>
+        </a>
+        <a href="/investigations" class="{% if request.url.path.startswith('/investigations') %}is-active{% endif %}" {% if request.url.path.startswith('/investigations') %}aria-current="page"{% endif %}>
+          <span>Investigations</span><small>Evidence-backed reports</small>
+        </a>
+      </nav>
+      <details class="settings-dropdown">
+        <summary>Navigate workspace</summary>
+        <a href="/settings">Integrations</a>
+        <a href="/investigations">Investigations</a>
+      </details>
+    </aside>
+    <main class="settings-content">
+      {% block settings_content %}{% endblock %}
+    </main>
+  </div>
+  <footer class="settings-footer">
+    <span>DevOps Agent · read-only incident intelligence</span>
+    <nav aria-label="Workspace links">
+      <a href="/settings">Settings</a>
+      <a href="/investigations">Investigations</a>
+      <a href="/">Home</a>
+    </nav>
+  </footer>
+</div>
+<style>
+  .settings-shell { width:min(1180px, calc(100% - 40px)); margin:0 auto; }
+  .settings-topbar { display:flex; align-items:center; justify-content:space-between; min-height:82px; border-bottom:1px solid var(--border-subtle); }
+  .settings-brand { color:var(--text-primary); font-weight:650; letter-spacing:-.02em; text-decoration:none; }
+  .settings-brand span { margin-left:8px; color:var(--text-muted); font-size:11px; font-weight:500; letter-spacing:.08em; text-transform:uppercase; }
+  .settings-topnav, .settings-footer nav { display:flex; gap:20px; align-items:center; }
+  .settings-topnav a, .settings-footer a { color:var(--text-secondary); text-decoration:none; }
+  .settings-topnav a:hover, .settings-footer a:hover { color:var(--accent-hover); }
+  .settings-frame { display:grid; grid-template-columns:230px minmax(0, 1fr); gap:48px; padding:48px 0 64px; }
+  .settings-sidebar { align-self:start; position:sticky; top:24px; }
+  .sidebar-label { margin:0 0 12px; color:var(--text-muted); font:600 11px/1.4 ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; }
+  .settings-nav { display:grid; gap:4px; }
+  .settings-nav a { display:grid; gap:2px; padding:11px 13px; border-left:2px solid transparent; color:var(--text-secondary); text-decoration:none; }
+  .settings-nav a:hover { color:var(--text-primary); background:var(--accent-subtle); }
+  .settings-nav a.is-active { border-left-color:var(--accent); background:var(--accent-subtle); color:var(--text-primary); }
+  .settings-nav small { color:var(--text-muted); font-size:11px; }
+  .settings-dropdown { display:none; margin-top:18px; border:1px solid var(--border-default); background:var(--bg-inset); }
+  .settings-dropdown summary { padding:10px 12px; cursor:pointer; color:var(--text-secondary); }
+  .settings-dropdown a { display:block; padding:8px 12px; color:var(--text-secondary); text-decoration:none; }
+  .settings-content { min-width:0; }
+  .settings-content .page-card, .settings-content .page-card.wide { width:100%; padding:0; border:0; background:transparent; }
+  .settings-footer { display:flex; justify-content:space-between; gap:20px; padding:20px 0 32px; border-top:1px solid var(--border-subtle); color:var(--text-muted); font-size:12px; }
+  @media (max-width:760px) {
+    .settings-shell { width:min(100% - 32px, 680px); }
+    .settings-topbar { align-items:flex-start; flex-direction:column; gap:14px; padding:20px 0; }
+    .settings-frame { grid-template-columns:1fr; gap:24px; padding:28px 0 44px; }
+    .settings-sidebar { position:static; }
+    .settings-nav { display:none; }
+    .settings-dropdown { display:block; }
+    .settings-footer { align-items:flex-start; flex-direction:column; }
+    .settings-footer nav { flex-wrap:wrap; gap:14px; }
+  }
+</style>
+{% endblock %}

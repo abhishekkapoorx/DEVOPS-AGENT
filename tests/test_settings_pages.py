@@ -66,6 +66,8 @@ def test_settings_page_generates_one_time_webhook_secret():
     assert response.status_code == 200
     assert "whsec_once" in response.text
     assert "credentials: whsec_once" in response.text
+    assert 'href="/investigations"' in response.text
+    assert "Workspace" in response.text
     assert store.webhooks[0].name == "kind-alertmanager"
 
 
