@@ -1,23 +1,21 @@
-# Private backend dependencies. MCP support is intentionally not installed.
+# Runtime dependencies for the API, migration job, and investigation worker.
+# MCP support is intentionally not installed in this image.
 alembic>=1.16,<2
 argon2-cffi>=23.1,<26
 asyncpg>=0.30,<1
 cryptography>=46,<51
-kubernetes-asyncio==29.0.0
 fastapi>=0.119,<1
+kubernetes-asyncio==29.0.0
 httpx==0.28.1
 langchain>=1,<2
 langchain-core>=1,<2
-langgraph-checkpoint-postgres>=3,<4
 langchain-google-genai>=3,<4
 langchain-groq>=1,<2
 langchain-ollama>=1,<2
 langchain-openai>=1,<2
+langgraph-checkpoint-postgres>=3,<4
 pydantic>=2.11,<3
 psycopg[binary]>=3.2,<4
 python-multipart>=0.0.20,<1
 sqlalchemy[asyncio]>=2.0,<3
 uvicorn>=0.35,<1
-
-# The existing requirements.txt remains the full legacy development/runtime
-# environment. Install this file for the minimal server package instead.

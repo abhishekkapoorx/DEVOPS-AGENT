@@ -2,8 +2,27 @@ agent_server/indexing/
 agent_server/utils/rag.py
 cocoindex-codebase-indexing.py
 vectordbs/
-**/__pycache__/
-**/*.py[cod]
+
+# Secrets and local credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Local environments, caches, and temporary files
 .git/
 .venv/
+venv/
+**/__pycache__/
+**/*.py[cod]
+.pytest_cache/
+.pytest-tmp/
+
+# Files not needed by the runtime image
 tests/
+docs/
+incident-investigation-lab/
+build/
+dist/
+*.egg-info/
