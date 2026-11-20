@@ -55,6 +55,25 @@ def test_landing_page_is_public_and_contains_product_message():
     assert response.status_code == 200
     assert "Turn alerts into evidence-backed decisions" in response.text
     assert "/login" in response.text
+    assert "Sign in" in response.text
+
+
+def test_authenticated_landing_page_shows_account_link_instead_of_sign_in():
+    auth = AuthSessionService(
+        repository=WebsiteAuthRepository(),
+        approval_provider=object(),
+        access_token_secret="test-secret",
+    )
+    app = FastAPI()
+    app.include_router(create_website_router(Path("agent_server/templates"), auth_service=auth))
+    client = TestClient(app, cookies={"devops_access_token": issue_access_token("test-secret", "person@example.com")})
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert 'href="/account"' in response.text
+    assert "Account" in response.text
+    assert ">Sign in<" not in response.text
 
 
 def test_login_page_starts_browser_device_flow():

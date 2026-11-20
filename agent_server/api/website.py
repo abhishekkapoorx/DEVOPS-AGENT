@@ -23,10 +23,14 @@ def create_website_router(
 
     @router.get("/", include_in_schema=False)
     async def landing_page(request: Request):
+        authenticated = bool(
+            auth_service
+            and auth_service.current_user(request.cookies.get("devops_access_token", ""))
+        )
         return templates.TemplateResponse(
             request=request,
             name="landing.html",
-            context={"title": "Trustworthy incident investigations"},
+            context={"title": "Trustworthy incident investigations", "authenticated": authenticated},
         )
 
     @router.get("/login", include_in_schema=False)

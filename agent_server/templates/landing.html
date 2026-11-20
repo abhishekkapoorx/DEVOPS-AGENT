@@ -16,6 +16,8 @@
     .mark { display:grid; width:30px; height:30px; place-items:center; border:1px solid #6d9cff; border-radius:9px; color:#dce8ff; background:linear-gradient(135deg,#396fe0,#6ce3c0); box-shadow:0 0 28px #4177d955; }
     .nav-links { display:flex; gap:22px; color:var(--muted); font-size:14px; }
     .nav-links a:hover { color:var(--text); }
+    .account-link { display:inline-flex; align-items:center; gap:7px; color:var(--text) !important; }
+    .account-icon { display:inline-grid; width:22px; height:22px; place-items:center; border:1px solid #6d9cff; border-radius:50%; color:var(--blue); font-size:15px; line-height:1; }
     .hero { display:grid; grid-template-columns:1.08fr .92fr; gap:70px; align-items:center; min-height:620px; padding:58px 0 90px; }
     .eyebrow { color:var(--mint); font:700 12px/1.2 ui-monospace,SFMono-Regular,monospace; letter-spacing:.14em; text-transform:uppercase; }
     h1 { max-width:720px; margin:18px 0; font-size:clamp(44px,7vw,78px); line-height:1.02; letter-spacing:-.065em; }
@@ -44,7 +46,7 @@
   <div class="shell">
     <nav>
       <a class="brand" href="/"><span class="mark">✦</span> DevOps Agent</a>
-      <div class="nav-links"><a href="#how">How it works</a><a href="#trust">Trust model</a><a href="/login">Sign in</a></div>
+      <div class="nav-links"><a href="#how">How it works</a><a href="#trust">Trust model</a>{% if authenticated %}<a class="account-link" href="/account"><span class="account-icon" aria-hidden="true">⌾</span> Account</a>{% else %}<a href="/login">Sign in</a>{% endif %}</div>
     </nav>
     <section class="hero">
       <div>
