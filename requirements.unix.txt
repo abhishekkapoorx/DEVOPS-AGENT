@@ -7,7 +7,7 @@ annotated-types==0.7.0
 anthropic==0.72.1
 anyio==4.11.0
 attrs==25.4.0
-Authlib==1.6.5
+Authlib==1.9.1
 awscli==1.42.57
 awslabs.aws-api-mcp-server==1.1.2
 beartype==0.22.5
