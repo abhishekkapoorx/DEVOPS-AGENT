@@ -56,6 +56,8 @@ def test_landing_page_is_public_and_contains_product_message():
     assert "Turn alerts into evidence-backed decisions" in response.text
     assert "/login" in response.text
     assert "Sign in" in response.text
+    assert "The CLI advantage" in response.text
+    assert "Less context switching" in response.text
 
 
 def test_authenticated_landing_page_shows_account_link_instead_of_sign_in():
