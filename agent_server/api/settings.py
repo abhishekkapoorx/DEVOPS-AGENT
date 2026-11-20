@@ -64,6 +64,19 @@ def create_settings_router(
             raise HTTPException(status_code=401, detail="Website sign-in required")
         return user
 
+    def browser_user(
+        request: Request,
+        authorization: str | None = Header(default=None),
+    ) -> AuthenticatedUser:
+        try:
+            return current_user(request, authorization)
+        except HTTPException as error:
+            raise HTTPException(
+                status_code=status.HTTP_303_SEE_OTHER,
+                headers={"Location": "/login"},
+                detail="Redirecting to sign in",
+            ) from error
+
     def require_secret_store() -> SecretRepository:
         if secret_repository is None:
             raise HTTPException(
@@ -100,7 +113,7 @@ def create_settings_router(
         ]
 
     @router.get("/settings", include_in_schema=False)
-    async def settings_page(request: Request, user: AuthenticatedUser = Depends(current_user)):
+    async def settings_page(request: Request, user: AuthenticatedUser = Depends(browser_user)):
         store = require_secret_store()
         webhooks = await store.list_webhook_secrets(user.user_id)
         resources = await store.list_resource_secrets(user.user_id)
@@ -120,7 +133,7 @@ def create_settings_router(
     async def create_webhook_secret_page(
         request: Request,
         name: str = Form(min_length=1, max_length=128),
-        user: AuthenticatedUser = Depends(current_user),
+        user: AuthenticatedUser = Depends(browser_user),
     ):
         store = require_secret_store()
         _, raw_secret = await store.create_webhook_secret(user.user_id, name.strip())
@@ -140,7 +153,7 @@ def create_settings_router(
         )
 
     @router.post("/settings/webhook-secrets/{secret_id}/revoke", include_in_schema=False)
-    async def revoke_webhook_secret_page(secret_id: str, user: AuthenticatedUser = Depends(current_user)):
+    async def revoke_webhook_secret_page(secret_id: str, user: AuthenticatedUser = Depends(browser_user)):
         await require_secret_store().revoke_webhook_secret(user.user_id, secret_id)
         return RedirectResponse("/settings", status_code=status.HTTP_303_SEE_OTHER)
 
@@ -149,13 +162,13 @@ def create_settings_router(
         provider: str = Form(min_length=1, max_length=128),
         name: str = Form(min_length=1, max_length=128),
         value: str = Form(min_length=1, max_length=100_000),
-        user: AuthenticatedUser = Depends(current_user),
+        user: AuthenticatedUser = Depends(browser_user),
     ):
         await require_secret_store().save_resource_secret(user.user_id, provider, name, value)
         return RedirectResponse("/settings", status_code=status.HTTP_303_SEE_OTHER)
 
     @router.post("/settings/resource-secrets/{secret_id}/delete", include_in_schema=False)
-    async def delete_resource_secret_page(secret_id: str, user: AuthenticatedUser = Depends(current_user)):
+    async def delete_resource_secret_page(secret_id: str, user: AuthenticatedUser = Depends(browser_user)):
         await require_secret_store().delete_resource_secret(user.user_id, secret_id)
         return RedirectResponse("/settings", status_code=status.HTTP_303_SEE_OTHER)
 
@@ -189,7 +202,7 @@ def create_settings_router(
         return {"id": row.id, "provider": row.provider, "name": row.name, "masked": mask_secret(body.value)}
 
     @router.get("/investigations", include_in_schema=False)
-    async def investigations_page(request: Request, user: AuthenticatedUser = Depends(current_user)):
+    async def investigations_page(request: Request, user: AuthenticatedUser = Depends(browser_user)):
         return templates.TemplateResponse(
             request=request,
             name="investigations.html",
@@ -200,7 +213,7 @@ def create_settings_router(
     async def investigation_page(
         request: Request,
         investigation_id: str,
-        user: AuthenticatedUser = Depends(current_user),
+        user: AuthenticatedUser = Depends(browser_user),
     ):
         report = await get_report(investigation_id, user.user_id)
         if report is None:

@@ -52,6 +52,7 @@ class LocalAccountRow(AuthBase):
     email: Mapped[str] = mapped_column(String(320), primary_key=True)
     password_hash: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    display_name: Mapped[str | None] = mapped_column(String(120))
 
 
 class PostgresAuthRepository:
@@ -77,7 +78,16 @@ class PostgresAuthRepository:
     async def get_local_account(self, email: str) -> LocalAccount | None:
         async with self._sessions() as session:
             row = await session.get(LocalAccountRow, email)
-        return LocalAccount(email=row.email, password_hash=row.password_hash) if row else None
+        return _account(row) if row else None
+
+    async def update_local_account(self, email: str, display_name: str | None) -> LocalAccount | None:
+        async with self._sessions() as session:
+            row = await session.get(LocalAccountRow, email)
+            if row is None:
+                return None
+            row.display_name = display_name
+            await session.commit()
+        return _account(row)
 
     async def create_device(self, device: DeviceAuthorization) -> None:
         async with self._sessions() as session:
@@ -255,3 +265,12 @@ def _auth_session(row: AuthSessionRow) -> AuthSession:
 
 
 __all__ = ["AuthBase", "AuthSessionRow", "DeviceAuthorizationRow", "LocalAccountRow", "PostgresAuthRepository"]
+
+
+def _account(row: LocalAccountRow) -> LocalAccount:
+    return LocalAccount(
+        email=row.email,
+        password_hash=row.password_hash,
+        created_at=row.created_at,
+        display_name=row.display_name,
+    )

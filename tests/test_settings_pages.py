@@ -79,3 +79,25 @@ def test_settings_json_endpoint_never_lists_raw_secret():
 
     assert response.status_code == 200
     assert "secret" not in response.json()[0]
+
+
+def test_settings_page_redirects_unauthenticated_users_to_login():
+    auth = AuthSessionService(
+        repository=MemoryAuthRepository(),
+        approval_provider=object(),
+        access_token_secret="test-secret",
+    )
+    app = FastAPI()
+    app.include_router(
+        create_settings_router(
+            sessions=lambda: None,
+            secret_repository=FakeSecretRepository(),
+            auth_service=auth,
+            template_dir=__import__("pathlib").Path("agent_server/templates"),
+        )
+    )
+
+    response = TestClient(app).get("/settings", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/login"

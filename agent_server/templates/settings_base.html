@@ -7,13 +7,16 @@
     <nav class="settings-topnav" aria-label="Primary navigation">
       <a href="/settings">Settings</a>
       <a href="/investigations">Investigations</a>
-      <a href="/login">Account</a>
+      <a href="/account">Account</a>
     </nav>
   </header>
   <div class="settings-frame">
     <aside class="settings-sidebar" aria-label="Settings navigation">
       <p class="sidebar-label">Workspace</p>
       <nav class="settings-nav">
+        <a href="/account" class="{% if request.url.path.startswith('/account') %}is-active{% endif %}" {% if request.url.path.startswith('/account') %}aria-current="page"{% endif %}>
+          <span>Account</span><small>Profile details</small>
+        </a>
         <a href="/settings" class="{% if request.url.path == '/settings' %}is-active{% endif %}" {% if request.url.path == '/settings' %}aria-current="page"{% endif %}>
           <span>Integrations</span><small>Secrets &amp; webhooks</small>
         </a>
@@ -23,6 +26,7 @@
       </nav>
       <details class="settings-dropdown">
         <summary>Navigate workspace</summary>
+        <a href="/account">Account</a>
         <a href="/settings">Integrations</a>
         <a href="/investigations">Investigations</a>
       </details>
@@ -35,6 +39,7 @@
     <span>DevOps Agent · read-only incident intelligence</span>
     <nav aria-label="Workspace links">
       <a href="/settings">Settings</a>
+      <a href="/account">Account</a>
       <a href="/investigations">Investigations</a>
       <a href="/">Home</a>
     </nav>
