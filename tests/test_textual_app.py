@@ -6,7 +6,7 @@ import pytest
 from rich.console import Console
 from rich.markdown import Markdown
 from textual.binding import Binding
-from textual.widgets import Button, Input, Static
+from textual.widgets import Button, Input, OptionList, Static
 
 from agent_cli.auth import TokenResponse
 from agent_cli.textual_app import (
@@ -527,6 +527,53 @@ async def test_slash_commands_create_rename_list_and_resume_conversations():
         expected_id = client.conversations[1]["id"]
         assert app.selected_conversation_id == expected_id
         assert store.selected == expected_id
+
+
+@pytest.mark.asyncio
+async def test_slash_suggestions_filter_and_insert_command_at_cursor_context():
+    app = TextualAgentApp(FakeAuth(tokens=token()), lambda _tokens: FakeClient())
+
+    async with app.run_test(size=(100, 35)) as pilot:
+        await pilot.pause(0.1)
+        composer = app.query_one("#message", Input)
+        composer.value = "Review incident /he follow-up"
+        composer.cursor_position = len("Review incident /he")
+        await pilot.pause(0.1)
+
+        suggestions = app.query_one("#command-suggestions", OptionList)
+        assert suggestions.display
+        assert suggestions.option_count == 1
+        suggestion = str(suggestions.get_option_at_index(0).prompt)
+        assert "/help" in suggestion
+        assert "Show available commands" in suggestion
+
+        await pilot.press("enter")
+
+        assert composer.value == "Review incident /help follow-up"
+
+
+@pytest.mark.asyncio
+async def test_slash_suggestions_support_arrow_selection_and_escape_preserves_draft():
+    app = TextualAgentApp(FakeAuth(tokens=token()), lambda _tokens: FakeClient())
+
+    async with app.run_test(size=(100, 35)) as pilot:
+        await pilot.pause(0.1)
+        composer = app.query_one("#message", Input)
+        composer.value = "/"
+        await pilot.pause(0.1)
+        await pilot.press("down", "enter")
+
+        assert composer.value == "/new"
+
+        composer.value = "please /ne"
+        composer.cursor_position = len(composer.value)
+        await pilot.pause(0.1)
+        assert app.query_one("#command-suggestions", OptionList).display
+
+        await pilot.press("escape")
+
+        assert composer.value == "please /ne"
+        assert not app.query_one("#command-suggestions", OptionList).display
 
 
 def token():
