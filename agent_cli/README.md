@@ -27,6 +27,9 @@ Ctrl+C. Export writes the persisted conversation transcript as readable plain
 text. Reopening a conversation restores its ordered messages, tool calls and
 results, and sub-agent activity from the backend event history. The app
 remembers the selected conversation ID locally; history remains on the backend.
+A slash-command menu appears above the composer when you type `/`, including in
+the middle of a draft. It filters as you type; use the arrow keys to choose a
+command, Enter to insert it into the draft, or Escape to dismiss the menu.
 A new chat remains a local draft
 until the first non-empty prompt is sent. The server generates a title from the
 first prompt for new chats with the default title; generated titles are limited

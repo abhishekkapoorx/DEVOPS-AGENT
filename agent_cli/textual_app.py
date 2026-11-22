@@ -131,6 +131,31 @@ class ExportConversationScreen(ModalScreen[str | None]):
             self.dismiss(event.value.strip())
 
 
+class SlashCommandInput(Input):
+    BINDINGS = [
+        Binding("up", "suggestion_up", show=False),
+        Binding("down", "suggestion_down", show=False),
+        Binding("escape", "dismiss_suggestions", show=False),
+    ]
+
+    def action_suggestion_up(self) -> None:
+        if isinstance(self.app, TextualAgentApp):
+            self.app.move_command_suggestion(-1)
+
+    def action_suggestion_down(self) -> None:
+        if isinstance(self.app, TextualAgentApp):
+            self.app.move_command_suggestion(1)
+
+    def action_dismiss_suggestions(self) -> None:
+        if isinstance(self.app, TextualAgentApp):
+            self.app.dismiss_command_suggestions()
+
+    async def action_submit(self) -> None:
+        if isinstance(self.app, TextualAgentApp) and self.app.select_command_suggestion():
+            return
+        await super().action_submit()
+
+
 class TextualAgentApp(App[None]):
     TITLE = "DevOps Agent"
     SUB_TITLE = "Chat"
@@ -141,7 +166,14 @@ class TextualAgentApp(App[None]):
     #messages { height: 1fr; overflow-y: auto; padding: 1 2; }
     .activity-step { height: auto; margin: 0 0 1 0; padding: 0 1; color: $text-muted; }
     .agent-thinking { text-style: italic; }
-    #message { dock: bottom; margin: 0 1 1 1; }
+    #composer { dock: bottom; height: auto; margin: 0 1 1 1; }
+    #command-suggestions {
+        height: auto;
+        max-height: 8;
+        border: round $accent;
+        background: $panel;
+    }
+    #message { width: 100%; }
     .entry { height: auto; margin-bottom: 1; }
     """
 
@@ -176,6 +208,8 @@ class TextualAgentApp(App[None]):
         self._agent_thinking: Static | None = None
         self._assistant_bubble: Static | None = None
         self._assistant_content = ""
+        self._visible_command_names: list[str] = []
+        self._suppressed_suggestion_value: str | None = None
         self.commands: dict[str, tuple[str, Command]] = {
             "help": ("Show available commands", self._cmd_help),
             "new": ("Start a chat: /new [title]", self._cmd_new),
@@ -190,7 +224,13 @@ class TextualAgentApp(App[None]):
         yield Static("Starting…", id="status")
         yield Static("", id="run-status")
         yield Vertical(id="messages")
-        yield Input(placeholder="Message your agent…  (/help for commands)", id="message")
+        with Vertical(id="composer"):
+            suggestions = OptionList(id="command-suggestions", markup=False)
+            suggestions.display = False
+            yield suggestions
+            yield SlashCommandInput(
+                placeholder="Message your agent…  (/help for commands)", id="message"
+            )
         yield Footer()
 
     def on_mount(self) -> None:
@@ -199,6 +239,82 @@ class TextualAgentApp(App[None]):
     def on_input_submitted(self, event: Input.Submitted) -> None:
         if event.input.id == "message":
             self.send_message()
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        if event.input.id != "message":
+            return
+        if event.value == self._suppressed_suggestion_value:
+            self._suppressed_suggestion_value = None
+            self.dismiss_command_suggestions()
+            return
+        self._suppressed_suggestion_value = None
+        self._update_command_suggestions(event.input)
+
+    def _update_command_suggestions(self, field: Input) -> None:
+        cursor = field.cursor_position
+        slash = field.value.rfind("/", 0, cursor)
+        if slash < 0:
+            self.dismiss_command_suggestions()
+            return
+
+        prefix = field.value[slash + 1 : cursor]
+        if any(character.isspace() for character in prefix):
+            self.dismiss_command_suggestions()
+            return
+
+        matches = [name for name in self.commands if name.startswith(prefix.lower())]
+        suggestions = self.query_one("#command-suggestions", OptionList)
+        self._visible_command_names = matches
+        suggestions.set_options(
+            [f"/{name} — {self.commands[name][0]}" for name in matches]
+        )
+        suggestions.action_first()
+        suggestions.display = bool(matches)
+
+    def move_command_suggestion(self, direction: int) -> None:
+        suggestions = self.query_one("#command-suggestions", OptionList)
+        if not suggestions.display or not suggestions.option_count:
+            return
+        if direction < 0:
+            suggestions.action_cursor_up()
+        else:
+            suggestions.action_cursor_down()
+
+    def dismiss_command_suggestions(self) -> None:
+        self.query_one("#command-suggestions", OptionList).display = False
+
+    def select_command_suggestion(self) -> bool:
+        suggestions = self.query_one("#command-suggestions", OptionList)
+        index = suggestions.highlighted
+        if (
+            not suggestions.display
+            or index is None
+            or index >= len(self._visible_command_names)
+        ):
+            return False
+
+        field = self.query_one("#message", Input)
+        cursor = field.cursor_position
+        slash = field.value.rfind("/", 0, cursor)
+        if slash < 0:
+            self.dismiss_command_suggestions()
+            return False
+
+        end = next(
+            (
+                position
+                for position in range(cursor, len(field.value))
+                if field.value[position].isspace()
+            ),
+            len(field.value),
+        )
+        command = f"/{self._visible_command_names[index]}"
+        new_value = f"{field.value[:slash]}{command}{field.value[end:]}"
+        self._suppressed_suggestion_value = new_value
+        field.value = new_value
+        field.cursor_position = slash + len(command)
+        self.dismiss_command_suggestions()
+        return True
 
     def action_change_chat(self) -> None:
         self.run_worker(self._change_chat())

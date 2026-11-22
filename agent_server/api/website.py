@@ -5,9 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastapi import APIRouter, Form, HTTPException, Request, status
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
+from agent_server.alertmanager_manifests import helm_values, kustomize_bundle, operator_manifest
 from agent_server.accounts import AccountError, LocalAccountService
 from agent_server.auth_sessions import AuthSessionService
 from agent_server.docs import DOCS, load_doc
@@ -22,7 +23,7 @@ def create_website_router(
 ) -> APIRouter:
     router = APIRouter()
     templates = create_site_templates(template_dir, auth_service)
-    docs_dir = template_dir.parent.parent / "docs" / "website"
+    docs_dir = template_dir.parent / "docs" / "website"
     static_files = StaticFiles(directory=template_dir.parent / "static")
 
     @router.get("/static/{asset_path:path}", include_in_schema=False)
@@ -51,6 +52,32 @@ def create_website_router(
             request=request,
             name="login.html",
             context={"title": "Sign in", "mode": mode if mode in {"signin", "signup"} else "signin", "message": None},
+        )
+
+    @router.get("/docs/downloads/alertmanager/{manifest_format}", include_in_schema=False)
+    async def download_alertmanager_example(manifest_format: str):
+        endpoint = "https://YOUR_AGENT_HOST/webhook/alertmanager"
+        token = "REPLACE_WITH_WEBHOOK_TOKEN"
+        if manifest_format == "kustomize.zip":
+            return Response(
+                content=kustomize_bundle(endpoint, token),
+                media_type="application/zip",
+                headers={
+                    "Content-Disposition": 'attachment; filename="alertmanager-webhook-kustomize-example.zip"'
+                },
+            )
+        if manifest_format == "helm.yaml":
+            content = helm_values(endpoint, token)
+            filename = "alertmanager-webhook-values-example.yaml"
+        elif manifest_format == "operator.yaml":
+            content = operator_manifest(endpoint, token)
+            filename = "alertmanagerconfig-example.yaml"
+        else:
+            raise HTTPException(status_code=404, detail="Manifest example not found")
+        return Response(
+            content=content,
+            media_type="application/yaml",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
 
     @router.get("/docs/{slug:path}", include_in_schema=False)
