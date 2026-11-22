@@ -14,6 +14,12 @@ from sqlalchemy import select
 
 from agent_server.alertmanager_manifests import helm_values, kustomize_bundle, operator_manifest
 from agent_server.auth_sessions import AuthSessionService, AuthenticatedUser
+from agent_server.integrations import (
+    SLACK_PROVIDER,
+    IntegrationValidationError,
+    validate_slack_webhook_url,
+)
+from agent_server.investigations.slack import SlackDeliveryError, SlackPoster, build_test_briefing
 from agent_server.persistence.postgres import (
     AlertRow,
     InvestigationEvidenceRow,
@@ -41,6 +47,12 @@ class ResourceSecretInput(BaseModel):
     provider: str = Field(min_length=1, max_length=128)
     name: str = Field(min_length=1, max_length=128)
     value: str = Field(min_length=1, max_length=100_000)
+
+
+class SlackIntegrationInput(BaseModel):
+    display_name: str = Field(default="Slack", min_length=1, max_length=128)
+    webhook_url: str = Field(min_length=1, max_length=2048)
+    enabled: bool = True
 
 
 def create_settings_router(
@@ -120,6 +132,54 @@ def create_settings_router(
             for row in rows
         ]
 
+    async def integration_data(user_id: str) -> list[dict[str, Any]]:
+        store = require_secret_store()
+        rows = await store.list_integrations(user_id)
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            webhook_url = await store.decrypt_integration_webhook_url(row)
+            result.append(
+                {
+                    "id": row.id,
+                    "provider": row.provider,
+                    "display_name": row.display_name,
+                    "enabled": row.enabled,
+                    "webhook_url_masked": mask_secret(webhook_url),
+                    "created_at": row.created_at,
+                    "updated_at": row.updated_at,
+                }
+            )
+        return result
+
+    async def render_integrations(
+        request: Request,
+        user_id: str,
+        *,
+        message: str | None = None,
+        status_code: int = 200,
+    ):
+        store = require_secret_store()
+        slack = await store.get_integration(user_id, SLACK_PROVIDER)
+        slack_webhook_url = (
+            mask_secret(await store.decrypt_integration_webhook_url(slack)) if slack else None
+        )
+        return templates.TemplateResponse(
+            request=request,
+            name="integrations.html",
+            context={
+                "title": "Integrations",
+                "integrations": await integration_data(user_id),
+                "slack": slack,
+                "slack_webhook_url": slack_webhook_url,
+                "message": message,
+            },
+            status_code=status_code,
+        )
+
+    def require_slack_provider(provider: str) -> None:
+        if provider != SLACK_PROVIDER:
+            raise HTTPException(status_code=404, detail="Integration not found")
+
     @router.get("/settings", include_in_schema=False)
     async def settings_page(request: Request, user: AuthenticatedUser = Depends(browser_user)):
         store = require_secret_store()
@@ -129,7 +189,7 @@ def create_settings_router(
             request=request,
             name="settings.html",
             context={
-                "title": "Integrations",
+                "title": "Secrets and webhooks",
                 "webhooks": webhooks,
                 "resources": resources,
                 "mask_secret": mask_secret,
@@ -154,7 +214,7 @@ def create_settings_router(
             request=request,
             name="settings.html",
             context={
-                "title": "Integrations",
+                "title": "Secrets and webhooks",
                 "webhooks": webhooks,
                 "resources": resources,
                 "mask_secret": mask_secret,
@@ -212,6 +272,111 @@ def create_settings_router(
     async def delete_resource_secret_page(secret_id: str, user: AuthenticatedUser = Depends(browser_user)):
         await require_secret_store().delete_resource_secret(user.user_id, secret_id)
         return RedirectResponse("/settings", status_code=status.HTTP_303_SEE_OTHER)
+
+    @router.get("/settings/integrations", include_in_schema=False)
+    async def integrations_page(request: Request, user: AuthenticatedUser = Depends(browser_user)):
+        return await render_integrations(request, user.user_id)
+
+    @router.post("/settings/integrations", include_in_schema=False)
+    async def save_slack_integration(
+        request: Request,
+        display_name: str = Form(default="Slack", max_length=128),
+        webhook_url: str = Form(default="", max_length=2048),
+        enabled: bool = Form(default=False),
+        user: AuthenticatedUser = Depends(browser_user),
+    ):
+        try:
+            validated_url = validate_slack_webhook_url(webhook_url)
+        except IntegrationValidationError as error:
+            return await render_integrations(request, user.user_id, message=str(error), status_code=400)
+        name = display_name.strip() or "Slack"
+        await require_secret_store().save_integration(
+            user.user_id, SLACK_PROVIDER, name, validated_url, enabled
+        )
+        return RedirectResponse("/settings/integrations", status_code=status.HTTP_303_SEE_OTHER)
+
+    @router.post("/settings/integrations/{provider}/delete", include_in_schema=False)
+    async def delete_integration_page(
+        provider: str,
+        user: AuthenticatedUser = Depends(browser_user),
+    ):
+        require_slack_provider(provider)
+        await require_secret_store().delete_integration(user.user_id, provider)
+        return RedirectResponse("/settings/integrations", status_code=status.HTTP_303_SEE_OTHER)
+
+    @router.post("/settings/integrations/{provider}/test", include_in_schema=False)
+    async def test_integration_page(
+        request: Request,
+        provider: str,
+        user: AuthenticatedUser = Depends(browser_user),
+    ):
+        require_slack_provider(provider)
+        store = require_secret_store()
+        row = await store.get_integration(user.user_id, provider)
+        if row is None or not row.enabled:
+            return await render_integrations(
+                request,
+                user.user_id,
+                message="Save and enable the Slack integration before sending a test message.",
+                status_code=400,
+            )
+        webhook_url = await store.decrypt_integration_webhook_url(row)
+        try:
+            validate_slack_webhook_url(webhook_url)
+            delivered = await SlackPoster(webhook_url).post_text(
+                build_test_briefing(row.display_name)
+            )
+        except (IntegrationValidationError, SlackDeliveryError) as error:
+            return await render_integrations(request, user.user_id, message=str(error), status_code=400)
+        if not delivered:
+            return await render_integrations(
+                request,
+                user.user_id,
+                message="Slack did not accept the test message.",
+                status_code=400,
+            )
+        return await render_integrations(
+            request, user.user_id, message="Test message delivered to Slack."
+        )
+
+    @router.get("/v1/settings/integrations")
+    async def list_integrations(user: AuthenticatedUser = Depends(current_user)):
+        return await integration_data(user.user_id)
+
+    @router.post("/v1/settings/integrations")
+    async def save_integration(
+        body: SlackIntegrationInput,
+        user: AuthenticatedUser = Depends(current_user),
+    ):
+        try:
+            validated_url = validate_slack_webhook_url(body.webhook_url)
+        except IntegrationValidationError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        row = await require_secret_store().save_integration(
+            user.user_id,
+            SLACK_PROVIDER,
+            body.display_name.strip() or "Slack",
+            validated_url,
+            body.enabled,
+        )
+        webhook_url = await require_secret_store().decrypt_integration_webhook_url(row)
+        return {
+            "id": row.id,
+            "provider": row.provider,
+            "display_name": row.display_name,
+            "enabled": row.enabled,
+            "webhook_url_masked": mask_secret(webhook_url),
+        }
+
+    @router.delete("/v1/settings/integrations/{provider}")
+    async def delete_integration(
+        provider: str,
+        user: AuthenticatedUser = Depends(current_user),
+    ):
+        require_slack_provider(provider)
+        if not await require_secret_store().delete_integration(user.user_id, provider):
+            raise HTTPException(status_code=404, detail="Integration not found")
+        return {"deleted": True}
 
     @router.get("/v1/settings/webhook-secrets")
     async def list_webhook_secrets(user: AuthenticatedUser = Depends(current_user)):

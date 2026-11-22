@@ -7,7 +7,7 @@ or commit a personalized download.
 
 ## Configure the integration
 
-1. Sign in to the DevOps Agent website and open **Settings → Integrations**.
+1. Sign in to the DevOps Agent website and open **Settings → Secrets & webhooks**.
 2. Create a webhook secret with a recognizable name. Copy the token and
    endpoint immediately; the token is shown only at creation time.
 3. Select the artifact for the Alertmanager deployment style:
@@ -18,7 +18,7 @@ or commit a personalized download.
    Apply it only after confirming the endpoint and token are correct.
 5. Send a test alert and verify that a report appears under **Investigations**.
 
-The authenticated Integrations page generates personalized downloads with the
+The authenticated Secrets & webhooks page generates personalized downloads with the
 actual endpoint and token. Revoke the webhook secret on that page to invalidate
 it. Recreating a download does not change a token that has already been
 revoked.

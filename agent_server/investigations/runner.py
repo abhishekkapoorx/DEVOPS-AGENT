@@ -3,18 +3,28 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import logging
 from typing import Any, Awaitable, Callable
 
 from sqlalchemy import select
 
 from agent_server.alertmanager import NormalizedAlert
+from agent_server.integrations import SlackDestinationResolver
 from agent_server.investigations.context import build_context_pack
 from agent_server.investigations.analysis import analyze_context
 from agent_server.investigations.llm import LLMClient, LLMBudget
 from agent_server.investigations.registry import ToolRegistry
-from agent_server.investigations.slack import SlackPoster, build_analyzed_briefing, build_deterministic_briefing
+from agent_server.investigations.slack import (
+    SlackDeliveryError,
+    SlackPoster,
+    build_analyzed_briefing,
+    build_deterministic_briefing,
+)
 from agent_server.persistence.postgres import AlertRow, AuditLogRow, InvestigationRow, InvestigationRunRow
 from agent_server.tools.collectors.kubernetes_tools import default_kubernetes_tools
+
+
+logger = logging.getLogger(__name__)
 
 
 async def _default_kube_factory():
@@ -32,14 +42,21 @@ class InvestigationRunner:
         *,
         kube_factory: Callable[[], Awaitable[Any]] = _default_kube_factory,
         slack: SlackPoster | None = None,
+        slack_destination: SlackDestinationResolver | None = None,
         llm_client: LLMClient | None = None,
         llm_budget: LLMBudget | None = None,
     ) -> None:
         self.sessions = sessions
         self.kube_factory = kube_factory
-        self.slack = slack or SlackPoster()
+        self.slack = slack
+        self.slack_destination = slack_destination
         self.llm_client = llm_client
         self.llm_budget = llm_budget or LLMBudget()
+
+    async def _slack_webhook_url(self, owner_user_id: str) -> str | None:
+        if self.slack_destination is not None:
+            return await self.slack_destination.webhook_url_for(owner_user_id)
+        return self.slack.webhook_url if self.slack else None
 
     async def __call__(self, investigation: InvestigationRow) -> None:
         async with self.sessions() as session:
@@ -162,7 +179,6 @@ class InvestigationRunner:
                     analyzed.verifier,
                     occurrence_count=investigation.occurrence_count,
                 )
-                delivered = await self.slack.post_text(message) if self.slack.webhook_url else False
             else:
                 message = build_deterministic_briefing(
                     pack,
@@ -170,27 +186,49 @@ class InvestigationRunner:
                     status="Degraded: deterministic context pack",
                     reason=degraded_reason,
                 )
-                delivered = await self.slack.post_text(message) if self.slack.webhook_url else False
-                if not self.slack.webhook_url:
-                    await self.slack.post(pack, occurrence_count=investigation.occurrence_count, status="Degraded: deterministic context pack", reason=degraded_reason)
-            if delivered or not self.slack.webhook_url:
-                async with self.sessions() as session:
-                    row = await session.scalar(
-                        select(InvestigationRow).where(InvestigationRow.id == investigation.id)
-                    )
-                    if row is not None:
-                        row.slack_posted_at = datetime.now(timezone.utc)
-                        session.add(
-                            AuditLogRow(
-                                ts=row.slack_posted_at,
-                                actor="investigation-worker",
-                                action="slack_posted",
-                                object_type="investigation",
-                                object_id=row.id,
-                                details={"delivered": delivered},
-                            )
+            webhook_url = await self._slack_webhook_url(investigation.owner_user_id)
+            delivered = False
+            if webhook_url:
+                poster = (
+                    self.slack
+                    if self.slack is not None and self.slack.webhook_url == webhook_url
+                    else SlackPoster(webhook_url)
+                )
+                try:
+                    delivered = await poster.post_text(message)
+                except SlackDeliveryError as error:
+                    logger.warning("Slack delivery failed for investigation %s: %s", investigation.id, error)
+            else:
+                logger.info(
+                    "Slack integration is not enabled for owner %s; briefing:\n%s",
+                    investigation.owner_user_id,
+                    message,
+                )
+            if delivered:
+                reason = None
+            elif not webhook_url:
+                reason = "integration_not_configured"
+            else:
+                reason = "delivery_failed"
+            async with self.sessions() as session:
+                row = await session.scalar(
+                    select(InvestigationRow).where(InvestigationRow.id == investigation.id)
+                )
+                if row is not None:
+                    ts = datetime.now(timezone.utc)
+                    if delivered:
+                        row.slack_posted_at = ts
+                    session.add(
+                        AuditLogRow(
+                            ts=ts,
+                            actor="investigation-worker",
+                            action="slack_posted" if delivered else "slack_skipped",
+                            object_type="investigation",
+                            object_id=row.id,
+                            details={"delivered": delivered, "reason": reason},
                         )
-                        await session.commit()
+                    )
+                    await session.commit()
 
 
 __all__ = ["InvestigationRunner"]

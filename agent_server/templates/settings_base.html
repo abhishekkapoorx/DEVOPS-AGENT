@@ -9,8 +9,11 @@
         <a href="/account" class="grid gap-0.5 border-l-2 border-transparent px-3 py-2.5 text-muted no-underline hover:bg-brand-soft hover:text-ink {% if request.url.path.startswith('/account') %}border-l-brand bg-brand-soft text-ink{% endif %}" {% if request.url.path.startswith('/account') %}aria-current="page"{% endif %}>
           <span>Account</span><small class="text-[11px] text-quiet">Profile details</small>
         </a>
+        <a href="/settings/integrations" class="grid gap-0.5 border-l-2 border-transparent px-3 py-2.5 text-muted no-underline hover:bg-brand-soft hover:text-ink {% if request.url.path.startswith('/settings/integrations') %}border-l-brand bg-brand-soft text-ink{% endif %}" {% if request.url.path.startswith('/settings/integrations') %}aria-current="page"{% endif %}>
+          <span>Integrations</span><small class="text-[11px] text-quiet">Slack &amp; destinations</small>
+        </a>
         <a href="/settings" class="grid gap-0.5 border-l-2 border-transparent px-3 py-2.5 text-muted no-underline hover:bg-brand-soft hover:text-ink {% if request.url.path == '/settings' %}border-l-brand bg-brand-soft text-ink{% endif %}" {% if request.url.path == '/settings' %}aria-current="page"{% endif %}>
-          <span>Integrations</span><small class="text-[11px] text-quiet">Secrets &amp; webhooks</small>
+          <span>Secrets &amp; webhooks</span><small class="text-[11px] text-quiet">Inbound credentials</small>
         </a>
         <a href="/investigations" class="grid gap-0.5 border-l-2 border-transparent px-3 py-2.5 text-muted no-underline hover:bg-brand-soft hover:text-ink {% if request.url.path.startswith('/investigations') %}border-l-brand bg-brand-soft text-ink{% endif %}" {% if request.url.path.startswith('/investigations') %}aria-current="page"{% endif %}>
           <span>Investigations</span><small class="text-[11px] text-quiet">Evidence-backed reports</small>
@@ -19,7 +22,8 @@
       <details class="hidden border border-border-default bg-inset max-tablet:block">
         <summary class="cursor-pointer px-3 py-2.5 text-muted">Navigate workspace</summary>
         <a class="block px-3 py-2 text-muted no-underline hover:bg-brand-soft" href="/account">Account</a>
-        <a class="block px-3 py-2 text-muted no-underline hover:bg-brand-soft" href="/settings">Integrations</a>
+        <a class="block px-3 py-2 text-muted no-underline hover:bg-brand-soft" href="/settings/integrations">Integrations</a>
+        <a class="block px-3 py-2 text-muted no-underline hover:bg-brand-soft" href="/settings">Secrets &amp; webhooks</a>
         <a class="block px-3 py-2 text-muted no-underline hover:bg-brand-soft" href="/investigations">Investigations</a>
       </details>
     </aside>
@@ -30,6 +34,7 @@
   <footer class="flex justify-between gap-5 border-t border-border-subtle py-5 pb-8 text-xs text-quiet max-tablet:flex-col max-tablet:items-start [&_nav]:flex [&_nav]:items-center [&_nav]:gap-4 [&_nav]:flex-wrap [&_a]:text-muted [&_a]:no-underline [&_a:hover]:text-brand-hover">
     <span>DevOps Agent · read-only incident intelligence</span>
     <nav aria-label="Workspace links">
+      <a href="/settings/integrations">Integrations</a>
       <a href="/settings">Settings</a>
       <a href="/account">Account</a>
       <a href="/investigations">Investigations</a>

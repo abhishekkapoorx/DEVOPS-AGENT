@@ -12,7 +12,7 @@ from uuid import uuid4
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from agent_server.persistence.postgres import UserSecretRow, WebhookSecretRow
+from agent_server.persistence.postgres import IntegrationRow, UserSecretRow, WebhookSecretRow
 from agent_server.secrets import SecretBox
 
 
@@ -130,6 +130,85 @@ class SecretRepository:
                 select(UserSecretRow).where(
                     UserSecretRow.id == secret_id,
                     UserSecretRow.user_id == user_id,
+                )
+            )
+            if row is None:
+                return False
+            await session.delete(row)
+            await session.commit()
+            return True
+
+
+    async def save_integration(
+        self,
+        owner_user_id: str,
+        provider: str,
+        display_name: str,
+        webhook_url: str,
+        enabled: bool,
+    ) -> IntegrationRow:
+        now = datetime.now(timezone.utc)
+        async with self._sessions() as session:
+            row = await session.scalar(
+                select(IntegrationRow).where(
+                    IntegrationRow.owner_user_id == owner_user_id,
+                    IntegrationRow.provider == provider,
+                )
+            )
+            if row is None:
+                row = IntegrationRow(
+                    id=uuid4().hex,
+                    owner_user_id=owner_user_id,
+                    provider=provider,
+                    created_at=now,
+                )
+                session.add(row)
+            ciphertext, nonce = self._box.encrypt(
+                webhook_url, associated_data=f"{owner_user_id}:{provider}:{row.id}"
+            )
+            row.display_name = display_name
+            row.enabled = enabled
+            row.webhook_url_ciphertext = ciphertext
+            row.webhook_url_nonce = nonce
+            row.key_version = self._box.key_version
+            row.updated_at = now
+            await session.commit()
+            return row
+
+    async def list_integrations(self, owner_user_id: str) -> list[IntegrationRow]:
+        async with self._sessions() as session:
+            return list(
+                (
+                    await session.scalars(
+                        select(IntegrationRow)
+                        .where(IntegrationRow.owner_user_id == owner_user_id)
+                        .order_by(IntegrationRow.provider, IntegrationRow.display_name)
+                    )
+                ).all()
+            )
+
+    async def get_integration(self, owner_user_id: str, provider: str) -> IntegrationRow | None:
+        async with self._sessions() as session:
+            return await session.scalar(
+                select(IntegrationRow).where(
+                    IntegrationRow.owner_user_id == owner_user_id,
+                    IntegrationRow.provider == provider,
+                )
+            )
+
+    async def decrypt_integration_webhook_url(self, row: IntegrationRow) -> str:
+        return self._box.decrypt(
+            row.webhook_url_ciphertext,
+            row.webhook_url_nonce,
+            associated_data=f"{row.owner_user_id}:{row.provider}:{row.id}",
+        )
+
+    async def delete_integration(self, owner_user_id: str, provider: str) -> bool:
+        async with self._sessions() as session:
+            row = await session.scalar(
+                select(IntegrationRow).where(
+                    IntegrationRow.owner_user_id == owner_user_id,
+                    IntegrationRow.provider == provider,
                 )
             )
             if row is None:

@@ -13,4 +13,5 @@ This glossary records the project's domain vocabulary. Add terms here as they be
 | Local Account | A self-hosted identity record keyed by a normalized email address, with a password hash stored in PostgreSQL. | The email is also the user ID in local-auth mode; passwords are never stored in plaintext. |
 | Run | One execution attempt to process a user message, including its status, events, and any Tool Calls. | A retry is a distinct run only when it has a distinct idempotency key. |
 | Investigation | A read-only incident analysis started from a normalized alert and its evidence context. | It does not grant autonomous write or remediation access. |
+| Integration | A user-owned, encrypted configuration that connects investigation reports to an external destination. | One integration per provider per user; an integration is used only when enabled. |
 

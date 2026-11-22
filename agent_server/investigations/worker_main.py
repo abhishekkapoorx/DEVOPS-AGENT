@@ -3,14 +3,20 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import signal
 
+from agent_server.integrations import IntegrationSlackDestinationResolver
 from agent_server.investigations.worker import InvestigationWorker
 from agent_server.investigations.runner import InvestigationRunner
-from agent_server.investigations.slack import SlackPoster
 from agent_server.investigations.llm import LLMBudget, client_from_environment
 from agent_server.persistence.postgres import create_session_factory
+from agent_server.persistence.secrets import SecretRepository
+from agent_server.secrets import SecretBox, SecretConfigurationError
+
+
+logger = logging.getLogger(__name__)
 
 
 async def _main() -> None:
@@ -29,9 +35,21 @@ async def _main() -> None:
             max_cost_usd=float(os.getenv("LLM_MAX_COST_USD", "0.25")),
             timeout_seconds=float(os.getenv("LLM_TIMEOUT_SECONDS", "30")),
         )
+        secret_repository = None
+        if os.getenv("ENCRYPTION_KEY"):
+            try:
+                secret_repository = SecretRepository(sessions, SecretBox.from_environment())
+            except SecretConfigurationError as error:
+                raise RuntimeError(f"Invalid ENCRYPTION_KEY configuration: {error}") from error
+        if secret_repository is None:
+            logger.warning("ENCRYPTION_KEY is unset; Slack integrations are unavailable")
         runner = InvestigationRunner(
             sessions,
-            slack=SlackPoster(),
+            slack_destination=(
+                IntegrationSlackDestinationResolver(secret_repository)
+                if secret_repository is not None
+                else None
+            ),
             llm_client=client_from_environment(),
             llm_budget=budget,
         )

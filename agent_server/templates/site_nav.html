@@ -8,7 +8,7 @@
       <a class="ui-site-link" href="/docs/cli" {% if request.url.path.startswith('/docs/') %}aria-current="page"{% endif %}>Documentation</a>
       {% if authenticated %}
       <a class="ui-site-link" href="/investigations" {% if request.url.path.startswith('/investigations') %}aria-current="page"{% endif %}>Investigations</a>
-      <a class="ui-site-link" href="/settings" {% if request.url.path.startswith('/settings') %}aria-current="page"{% endif %}>Integrations</a>
+      <a class="ui-site-link" href="/settings/integrations" {% if request.url.path.startswith('/settings/integrations') %}aria-current="page"{% endif %}>Integrations</a>
       <a class="ui-site-link" href="/account" {% if request.url.path.startswith('/account') %}aria-current="page"{% endif %}>Account</a>
       {% else %}
       <a class="ui-site-link" href="/login" {% if request.url.path == '/login' %}aria-current="page"{% endif %}>Sign in</a>
