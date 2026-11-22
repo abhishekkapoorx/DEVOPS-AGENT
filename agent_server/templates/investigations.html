@@ -1,8 +1,8 @@
 {% extends "settings_base.html" %}
 {% block settings_content %}
-<main class="page-card wide" aria-labelledby="investigations-title">
-  <p class="eyebrow">DevOps Agent / Reports</p>
-  <h1 id="investigations-title">Investigations</h1>
-  <ul>{% for item in investigations %}<li><a href="/investigations/{{ item.id }}">{{ item.alertname }} — {{ item.workload or "unknown" }}</a><br><small>{{ item.status }} · {{ item.severity }} · {{ item.occurrence_count }} occurrence(s)</small></li>{% else %}<li>No investigations yet.</li>{% endfor %}</ul>
+<main class="ui-page-card ui-page-card-wide" aria-labelledby="investigations-title">
+  <p class="ui-eyebrow">DevOps Agent / Reports</p>
+  <h1 id="investigations-title" class="ui-title">Investigations</h1>
+  <ul class="ui-status-list">{% for item in investigations %}<li class="mb-3"><a class="text-brand-hover" href="/investigations/{{ item.id }}">{{ item.alertname }} — {{ item.workload or "unknown" }}</a><br><small class="text-quiet">{{ item.status }} · {{ item.severity }} · {{ item.occurrence_count }} occurrence(s)</small></li>{% else %}<li class="mb-3">No investigations yet.</li>{% endfor %}</ul>
 </main>
 {% endblock %}

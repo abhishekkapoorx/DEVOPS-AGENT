@@ -1,81 +1,50 @@
 {% extends "base.html" %}
-{% block body_class %}settings-body{% endblock %}
+{% block body_class %}block p-0{% endblock %}
 {% block content %}
-<div class="settings-shell">
-  <header class="settings-topbar">
-    <a class="settings-brand" href="/">DevOps Agent <span>control plane</span></a>
-    <nav class="settings-topnav" aria-label="Primary navigation">
+<div class="mx-auto w-[min(1180px,calc(100%-40px))] max-tablet:w-[min(680px,calc(100%-32px))]">
+  <header class="flex min-h-[82px] items-center justify-between border-b border-border-subtle max-tablet:flex-col max-tablet:items-start max-tablet:gap-3.5 max-tablet:py-5">
+    <a class="font-semibold text-ink no-underline" href="/">DevOps Agent <span class="ml-2 font-sans text-[11px] font-medium tracking-[0.08em] text-quiet uppercase">control plane</span></a>
+    <nav class="flex items-center gap-5 text-sm [&_a]:text-muted [&_a]:no-underline [&_a:hover]:text-brand-hover max-tablet:w-full max-tablet:justify-between" aria-label="Primary navigation">
       <a href="/settings">Settings</a>
       <a href="/investigations">Investigations</a>
       <a href="/account">Account</a>
+      <a href="/docs/cli">Docs</a>
     </nav>
   </header>
-  <div class="settings-frame">
-    <aside class="settings-sidebar" aria-label="Settings navigation">
-      <p class="sidebar-label">Workspace</p>
-      <nav class="settings-nav">
-        <a href="/account" class="{% if request.url.path.startswith('/account') %}is-active{% endif %}" {% if request.url.path.startswith('/account') %}aria-current="page"{% endif %}>
-          <span>Account</span><small>Profile details</small>
+  <div class="grid grid-cols-[230px_minmax(0,1fr)] gap-12 py-12 pb-16 max-tablet:grid-cols-1 max-tablet:gap-6 max-tablet:py-7 max-tablet:pb-11">
+    <aside class="sticky top-6 self-start max-tablet:static" aria-label="Settings navigation">
+      <p class="mb-3 font-mono text-[11px] leading-[1.4] font-semibold tracking-[0.1em] text-quiet uppercase">Workspace</p>
+      <nav class="grid gap-1 max-tablet:hidden">
+        <a href="/account" class="grid gap-0.5 border-l-2 border-transparent px-3 py-2.5 text-muted no-underline hover:bg-brand-soft hover:text-ink {% if request.url.path.startswith('/account') %}border-l-brand bg-brand-soft text-ink{% endif %}" {% if request.url.path.startswith('/account') %}aria-current="page"{% endif %}>
+          <span>Account</span><small class="text-[11px] text-quiet">Profile details</small>
         </a>
-        <a href="/settings" class="{% if request.url.path == '/settings' %}is-active{% endif %}" {% if request.url.path == '/settings' %}aria-current="page"{% endif %}>
-          <span>Integrations</span><small>Secrets &amp; webhooks</small>
+        <a href="/settings" class="grid gap-0.5 border-l-2 border-transparent px-3 py-2.5 text-muted no-underline hover:bg-brand-soft hover:text-ink {% if request.url.path == '/settings' %}border-l-brand bg-brand-soft text-ink{% endif %}" {% if request.url.path == '/settings' %}aria-current="page"{% endif %}>
+          <span>Integrations</span><small class="text-[11px] text-quiet">Secrets &amp; webhooks</small>
         </a>
-        <a href="/investigations" class="{% if request.url.path.startswith('/investigations') %}is-active{% endif %}" {% if request.url.path.startswith('/investigations') %}aria-current="page"{% endif %}>
-          <span>Investigations</span><small>Evidence-backed reports</small>
+        <a href="/investigations" class="grid gap-0.5 border-l-2 border-transparent px-3 py-2.5 text-muted no-underline hover:bg-brand-soft hover:text-ink {% if request.url.path.startswith('/investigations') %}border-l-brand bg-brand-soft text-ink{% endif %}" {% if request.url.path.startswith('/investigations') %}aria-current="page"{% endif %}>
+          <span>Investigations</span><small class="text-[11px] text-quiet">Evidence-backed reports</small>
         </a>
       </nav>
-      <details class="settings-dropdown">
-        <summary>Navigate workspace</summary>
-        <a href="/account">Account</a>
-        <a href="/settings">Integrations</a>
-        <a href="/investigations">Investigations</a>
+      <details class="hidden border border-border-default bg-inset max-tablet:block">
+        <summary class="cursor-pointer px-3 py-2.5 text-muted">Navigate workspace</summary>
+        <a class="block px-3 py-2 text-muted no-underline hover:bg-brand-soft" href="/account">Account</a>
+        <a class="block px-3 py-2 text-muted no-underline hover:bg-brand-soft" href="/settings">Integrations</a>
+        <a class="block px-3 py-2 text-muted no-underline hover:bg-brand-soft" href="/investigations">Investigations</a>
       </details>
     </aside>
-    <main class="settings-content">
+    <main class="min-w-0 [&_.ui-page-card]:max-w-none [&_.ui-page-card]:border-0 [&_.ui-page-card]:bg-transparent [&_.ui-page-card]:p-0">
       {% block settings_content %}{% endblock %}
     </main>
   </div>
-  <footer class="settings-footer">
+  <footer class="flex justify-between gap-5 border-t border-border-subtle py-5 pb-8 text-xs text-quiet max-tablet:flex-col max-tablet:items-start [&_nav]:flex [&_nav]:items-center [&_nav]:gap-4 [&_nav]:flex-wrap [&_a]:text-muted [&_a]:no-underline [&_a:hover]:text-brand-hover">
     <span>DevOps Agent · read-only incident intelligence</span>
     <nav aria-label="Workspace links">
       <a href="/settings">Settings</a>
       <a href="/account">Account</a>
       <a href="/investigations">Investigations</a>
+      <a href="/docs/cli">Docs</a>
       <a href="/">Home</a>
     </nav>
   </footer>
 </div>
-<style>
-  .settings-shell { width:min(1180px, calc(100% - 40px)); margin:0 auto; }
-  .settings-topbar { display:flex; align-items:center; justify-content:space-between; min-height:82px; border-bottom:1px solid var(--border-subtle); }
-  .settings-brand { color:var(--text-primary); font-weight:650; letter-spacing:-.02em; text-decoration:none; }
-  .settings-brand span { margin-left:8px; color:var(--text-muted); font-size:11px; font-weight:500; letter-spacing:.08em; text-transform:uppercase; }
-  .settings-topnav, .settings-footer nav { display:flex; gap:20px; align-items:center; }
-  .settings-topnav a, .settings-footer a { color:var(--text-secondary); text-decoration:none; }
-  .settings-topnav a:hover, .settings-footer a:hover { color:var(--accent-hover); }
-  .settings-frame { display:grid; grid-template-columns:230px minmax(0, 1fr); gap:48px; padding:48px 0 64px; }
-  .settings-sidebar { align-self:start; position:sticky; top:24px; }
-  .sidebar-label { margin:0 0 12px; color:var(--text-muted); font:600 11px/1.4 ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; }
-  .settings-nav { display:grid; gap:4px; }
-  .settings-nav a { display:grid; gap:2px; padding:11px 13px; border-left:2px solid transparent; color:var(--text-secondary); text-decoration:none; }
-  .settings-nav a:hover { color:var(--text-primary); background:var(--accent-subtle); }
-  .settings-nav a.is-active { border-left-color:var(--accent); background:var(--accent-subtle); color:var(--text-primary); }
-  .settings-nav small { color:var(--text-muted); font-size:11px; }
-  .settings-dropdown { display:none; margin-top:18px; border:1px solid var(--border-default); background:var(--bg-inset); }
-  .settings-dropdown summary { padding:10px 12px; cursor:pointer; color:var(--text-secondary); }
-  .settings-dropdown a { display:block; padding:8px 12px; color:var(--text-secondary); text-decoration:none; }
-  .settings-content { min-width:0; }
-  .settings-content .page-card, .settings-content .page-card.wide { width:100%; padding:0; border:0; background:transparent; }
-  .settings-footer { display:flex; justify-content:space-between; gap:20px; padding:20px 0 32px; border-top:1px solid var(--border-subtle); color:var(--text-muted); font-size:12px; }
-  @media (max-width:760px) {
-    .settings-shell { width:min(100% - 32px, 680px); }
-    .settings-topbar { align-items:flex-start; flex-direction:column; gap:14px; padding:20px 0; }
-    .settings-frame { grid-template-columns:1fr; gap:24px; padding:28px 0 44px; }
-    .settings-sidebar { position:static; }
-    .settings-nav { display:none; }
-    .settings-dropdown { display:block; }
-    .settings-footer { align-items:flex-start; flex-direction:column; }
-    .settings-footer nav { flex-wrap:wrap; gap:14px; }
-  }
-</style>
 {% endblock %}

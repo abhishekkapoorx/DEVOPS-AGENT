@@ -1,9 +1,9 @@
 # DEVOPS-AGENT
 
-The product has two runtime parts:
+The product has two runtime areas:
 
 - **User machine:** a Python package with the CLI and local Tool Service helper. The helper runs commands and reads or edits files in the directory where `devops-agent` was started.
-- **Server:** one private backend with authentication, conversations, LangGraph, model prompts, and Postgres persistence.
+- **Server:** private backend services with authentication, conversations, LangGraph, model prompts, investigation work, and Postgres persistence.
 
 The user package contains `agent_cli` and the small shared security module only. It does not package server agents, prompts, or orchestration code.
 
@@ -12,6 +12,19 @@ The user package contains `agent_cli` and the small shared security module only.
 - Python 3.12 or newer
 - Docker with the Docker Compose plugin
 - An API key for the model provider selected in `.env`
+
+## Browser styles
+
+The server-rendered UI uses Tailwind CSS 4. Install its build dependencies and
+run the watcher while editing templates or styles:
+
+```powershell
+npm ci
+npm run css:watch
+```
+
+The API image compiles the stylesheet during its build. The checked-in CSS
+bundle also keeps direct local runs ready to render the UI.
 
 Install the command line tools you want the agent to use (for example, AWS CLI,
 Azure CLI, Google Cloud CLI, `kubectl`, Docker CLI, or Git) on the same machine
@@ -36,7 +49,7 @@ In `.env`, select the model provider and set its API key. The example is
 configured for OpenAI; keys for OpenAI, Groq, and Google have corresponding
 variables in the file. Keep `DEVOPS_AGENT_ENABLE_MCP_AGENTS=false`.
 
-Build and start Postgres, run database migrations, and start the API:
+Build and start Postgres, run database migrations, and start the API and worker services:
 
 ```powershell
 docker compose --env-file .env up --build -d

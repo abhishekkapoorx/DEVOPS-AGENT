@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block body_class %}block bg-[image:radial-gradient(circle_at_76%_0%,rgb(79_140_255_/_0.09),transparent_34rem)] bg-canvas p-0{% endblock %}
+{% block content %}
+<div class="mx-auto w-[min(1240px,calc(100%-48px))] max-docs:w-[min(680px,calc(100%-32px))]">
+  <header class="flex min-h-20 items-center justify-between gap-6 border-b border-border-subtle max-docs:flex-col max-docs:items-start max-docs:py-5">
+    <a class="text-base font-bold text-ink no-underline" href="/">DevOps Agent <span class="ml-2 font-mono text-[10px] leading-none font-medium tracking-[0.13em] text-quiet uppercase">documentation</span></a>
+    <nav class="flex items-center gap-[22px] text-[13px] [&_a]:text-muted [&_a]:no-underline [&_a:hover]:text-ink max-docs:w-full max-docs:justify-between" aria-label="Documentation actions">
+      <a href="/docs/investigations/alertmanager">Connect Alertmanager</a>
+      <a class="border border-border-default bg-white/[0.02] px-3 py-[9px]" href="/">Back to home</a>
+    </nav>
+  </header>
+  <div class="mx-auto grid max-w-[1072px] grid-cols-[240px_minmax(0,760px)] justify-center gap-[72px] py-[58px] pb-[90px] max-docs:grid-cols-1 max-docs:gap-[30px] max-docs:py-8 max-docs:pb-[60px]">
+    <aside class="sticky top-[26px] self-start max-docs:static" aria-label="Documentation navigation">
+      <p class="mb-5 font-mono text-[10px] leading-[1.4] font-semibold tracking-[0.14em] text-quiet uppercase">Learn the product</p>
+      {% for group in ["CLI", "Investigation"] %}
+      <details class="border-t border-border-subtle py-[15px] pb-1 last:border-b" open>
+        <summary class="flex cursor-pointer list-none justify-between text-[13px] font-semibold text-ink [&::-webkit-details-marker]:hidden">{{ group }} <span class="text-quiet transition-transform open:-rotate-90">⌄</span></summary>
+        <nav class="my-[11px] mb-2.5 grid gap-[3px]">
+          {% for item in docs if item.group == group %}
+          <a href="/docs/{{ item.slug }}" class="grid gap-0.5 border-l-2 border-transparent px-[11px] py-[9px] text-[13px] text-muted no-underline hover:bg-brand-soft hover:text-ink {% if item.slug == active_slug %}border-l-brand bg-brand-soft text-ink{% endif %}" {% if item.slug == active_slug %}aria-current="page"{% endif %}>
+            <span>{{ item.title }}</span>
+            {% if item.slug == active_slug %}<small class="text-[10px] text-brand-hover">Reading now</small>{% endif %}
+          </a>
+          {% endfor %}
+        </nav>
+      </details>
+      {% endfor %}
+      <div class="mt-7 flex gap-2.5 py-[13px] text-[11px] leading-[1.5] text-quiet max-docs:hidden">
+        <span class="mt-1 h-[7px] w-[7px] flex-none rounded-full bg-mint shadow-[0_0_0_4px_rgb(82_214_162_/_0.1)]"></span>
+        <p class="m-0">Read-only by design.<br>Evidence before explanation.</p>
+      </div>
+    </aside>
+    <main class="min-w-0">
+      <div class="mb-5 flex gap-2.5 text-xs text-quiet"><a class="text-brand-hover no-underline" href="/docs/cli">Docs</a><span>/</span><span>{{ doc_title }}</span></div>
+      <article class="pb-11">
+        <div class="docs-prose">{{ doc_html|safe }}</div>
+      </article>
+      <nav class="flex justify-between gap-[18px] border-t border-border-subtle pt-[22px]" aria-label="Documentation pagination">
+        {% if previous_page %}<a class="grid max-w-[48%] gap-1.5 text-ink no-underline hover:[&_strong]:text-brand-hover" href="/docs/{{ previous_page.slug }}"><small class="font-mono text-[10px] leading-[1.2] font-medium tracking-[0.1em] text-quiet uppercase">Previous</small><strong class="text-sm font-semibold">← {{ previous_page.title }}</strong></a>{% else %}<span></span>{% endif %}
+        {% if next_page %}<a class="ml-auto grid max-w-[48%] gap-1.5 text-right text-ink no-underline hover:[&_strong]:text-brand-hover" href="/docs/{{ next_page.slug }}"><small class="font-mono text-[10px] leading-[1.2] font-medium tracking-[0.1em] text-quiet uppercase">Next</small><strong class="text-sm font-semibold">{{ next_page.title }} →</strong></a>{% endif %}
+      </nav>
+    </main>
+  </div>
+</div>
+{% endblock %}

@@ -1,15 +1,15 @@
 {% extends "base.html" %}
 
 {% block content %}
-<main class="page-card" aria-labelledby="page-title">
-  <p class="eyebrow">DevOps Agent / Device approval</p>
-  <h1 id="page-title">Development sign-in</h1>
-  <p class="intro">Approve sign-in for <strong>{{ user_id }}</strong> using code <strong>{{ user_code }}</strong>.</p>
+<main class="ui-page-card" aria-labelledby="page-title">
+  <p class="ui-eyebrow">DevOps Agent / Device approval</p>
+  <h1 id="page-title" class="ui-title">Development sign-in</h1>
+  <p class="ui-intro">Approve sign-in for <strong>{{ user_id }}</strong> using code <strong>{{ user_code }}</strong>.</p>
   <form method="post" action="{{ action_url }}">
     <input type="hidden" name="user_code" value="{{ user_code }}">
-    <div class="button-row">
-      <button type="submit" name="decision" value="approve">Approve</button>
-      <button class="secondary" type="submit" name="decision" value="deny">Deny</button>
+    <div class="grid grid-cols-2 gap-2.5">
+      <button class="ui-button" type="submit" name="decision" value="approve">Approve</button>
+      <button class="ui-button ui-button-secondary" type="submit" name="decision" value="deny">Deny</button>
     </div>
   </form>
 </main>

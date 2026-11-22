@@ -5,109 +5,53 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#090b12">
   <title>{{ title }} | DevOps Agent</title>
-  <style>
-    :root { --bg:#090b12; --panel:#101522; --panel2:#131b2b; --line:#263149; --text:#f4f7fb; --muted:#9aa8bd; --blue:#72a8ff; --mint:#69e6bd; --orange:#ffc477; }
-    * { box-sizing:border-box; }
-    body { margin:0; color:var(--text); background:radial-gradient(circle at 70% 0%,#1b3158 0,transparent 34rem),var(--bg); font:15px/1.6 Inter,ui-sans-serif,system-ui,sans-serif; }
-    a { color:inherit; text-decoration:none; }
-    .shell { width:min(1160px,calc(100% - 40px)); margin:auto; }
-    nav { display:flex; align-items:center; justify-content:space-between; padding:24px 0; }
-    .brand { display:flex; align-items:center; gap:10px; font-weight:750; letter-spacing:-.02em; }
-    .mark { display:grid; width:30px; height:30px; place-items:center; border:1px solid #6d9cff; border-radius:9px; color:#dce8ff; background:linear-gradient(135deg,#396fe0,#6ce3c0); box-shadow:0 0 28px #4177d955; }
-    .nav-links { display:flex; gap:22px; color:var(--muted); font-size:14px; }
-    .nav-links a:hover { color:var(--text); }
-    .account-link { display:inline-flex; align-items:center; gap:7px; color:var(--text) !important; }
-    .account-icon { display:inline-grid; width:22px; height:22px; place-items:center; border:1px solid #6d9cff; border-radius:50%; color:var(--blue); font-size:15px; line-height:1; }
-    .hero { display:grid; grid-template-columns:1.08fr .92fr; gap:70px; align-items:center; min-height:620px; padding:58px 0 90px; }
-    .eyebrow { color:var(--mint); font:700 12px/1.2 ui-monospace,SFMono-Regular,monospace; letter-spacing:.14em; text-transform:uppercase; }
-    h1 { max-width:720px; margin:18px 0; font-size:clamp(44px,7vw,78px); line-height:1.02; letter-spacing:-.065em; }
-    .hero p { max-width:610px; color:var(--muted); font-size:19px; }
-    .actions { display:flex; gap:12px; margin-top:30px; flex-wrap:wrap; }
-    .button { display:inline-flex; align-items:center; justify-content:center; min-height:46px; padding:0 18px; border:1px solid #719dff; border-radius:10px; background:#6e9eff; color:#07101d; font-weight:750; box-shadow:0 10px 30px #5e8ff533; }
-    .button.secondary { border-color:var(--line); background:#121a2a; color:var(--text); box-shadow:none; }
-    .signal { position:relative; min-height:390px; padding:25px; border:1px solid var(--line); border-radius:24px; background:linear-gradient(145deg,#15223aee,#0d121eee); box-shadow:0 28px 80px #0008; overflow:hidden; }
-    .signal::before { position:absolute; width:260px; height:260px; border-radius:50%; background:#65e5bd22; filter:blur(2px); content:""; top:-90px; right:-70px; }
-    .terminal { position:absolute; inset:25px; display:flex; flex-direction:column; gap:14px; }
-    .terminal-head { display:flex; gap:7px; color:var(--muted); font:12px ui-monospace,monospace; }
-    .dot { width:8px; height:8px; border-radius:50%; background:var(--mint); }
-    .event { margin-top:20px; padding:16px; border:1px solid #38527e; border-radius:12px; background:#0c1424cc; }
-    .event strong { display:block; color:var(--blue); }
-    .event small { color:var(--muted); }
-    .evidence { margin-top:auto; padding:15px; border-left:2px solid var(--mint); color:#c9f8e9; background:#112c2a66; font:13px/1.5 ui-monospace,monospace; }
-    .bento-section { padding:20px 0 100px; }
-    .section-heading { display:flex; align-items:end; justify-content:space-between; gap:30px; margin-bottom:24px; }
-    .section-heading h2 { max-width:570px; margin:10px 0 0; font-size:clamp(32px,3.8vw,46px); line-height:1.02; letter-spacing:-.055em; }
-    .section-heading p { max-width:380px; margin:0; color:var(--muted); font-size:15px; line-height:1.55; }
-    .bento-grid { display:grid; grid-template-columns:repeat(12,1fr); grid-auto-rows:minmax(190px,auto); gap:14px; }
-    .bento-card { position:relative; display:flex; flex-direction:column; justify-content:space-between; min-height:184px; padding:22px; border:1px solid var(--line); border-radius:18px; background:linear-gradient(145deg,#111b2cdd,#0d131fdd); overflow:hidden; }
-    .bento-card::after { position:absolute; width:140px; height:140px; right:-45px; bottom:-60px; border:1px solid #6e9eff22; border-radius:50%; content:""; }
-    .bento-card h3 { margin:7px 0 8px; font-size:clamp(18px,1.8vw,22px); line-height:1.12; letter-spacing:-.035em; }
-    .bento-card p { max-width:430px; margin:0; color:var(--muted); font-size:14px; line-height:1.55; }
-    .bento-card .card-kicker { color:var(--mint); font:700 11px ui-monospace,monospace; letter-spacing:.12em; text-transform:uppercase; }
-    .bento-lead { grid-column:span 7; grid-row:span 2; min-height:382px; background:radial-gradient(circle at 100% 0,#31588c55,transparent 55%),linear-gradient(145deg,#162642,#0d131f); }
-    .bento-lead h3 { max-width:470px; font-size:clamp(26px,2.8vw,34px); line-height:1.04; }
-    .bento-command { margin-top:28px; padding:16px; border:1px solid #38527e; border-radius:12px; background:#080e18cc; color:#c9f8e9; font:13px/1.8 ui-monospace,monospace; }
-    .bento-command .prompt { color:var(--blue); }
-    .bento-command .success { color:var(--mint); }
-    .bento-speed { grid-column:span 5; }
-    .bento-evidence { grid-column:span 5; }
-    .bento-handoff, .bento-anywhere, .bento-code { grid-column:span 4; }
-    .bento-speed strong { align-self:flex-end; color:var(--blue); font-size:42px; line-height:1; opacity:.8; }
-    .bento-code { min-height:184px; background:linear-gradient(115deg,#14251f,#0d171e); }
-    .bento-code strong { color:var(--orange); font-size:clamp(20px,2vw,28px); line-height:1.1; letter-spacing:-.06em; }
-    .features { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; padding:20px 0 100px; }
-    .card { padding:24px; border:1px solid var(--line); border-radius:16px; background:#0e141fbb; }
-    .card b { display:block; margin-bottom:9px; font-size:17px; }
-    .card p { margin:0; color:var(--muted); }
-    footer { padding:24px 0 40px; border-top:1px solid var(--line); color:var(--muted); font-size:13px; }
-    @media (max-width:760px) { .hero { grid-template-columns:1fr; gap:35px; padding-top:35px; } .section-heading { display:block; } .section-heading p { margin-top:16px; } .bento-grid { display:block; } .bento-card { min-height:210px; margin-bottom:14px; } .bento-lead { min-height:360px; } .features { grid-template-columns:1fr; } .nav-links { display:none; } }
-  </style>
+  <link rel="stylesheet" href="/static/app.css">
 </head>
-<body>
-  <div class="shell">
-    <nav>
-      <a class="brand" href="/"><span class="mark">✦</span> DevOps Agent</a>
-      <div class="nav-links"><a href="#cli">CLI</a><a href="#how">How it works</a><a href="#trust">Trust model</a>{% if authenticated %}<a class="account-link" href="/account"><span class="account-icon" aria-hidden="true">⌾</span> Account</a>{% else %}<a href="/login">Sign in</a>{% endif %}</div>
+<body class="m-0 block bg-[image:radial-gradient(circle_at_70%_0%,#1b3158,transparent_34rem)] bg-marketing-bg font-sans text-[15px] leading-[1.6] text-marketing-ink">
+  <div class="mx-auto w-[min(1160px,calc(100%-40px))]">
+    <nav class="flex items-center justify-between py-6">
+      <a class="flex items-center gap-2.5 font-bold text-marketing-ink no-underline" href="/"><span class="grid size-[30px] place-items-center rounded-[9px] border border-[#6d9cff] bg-[linear-gradient(135deg,#396fe0,#6ce3c0)] text-[#dce8ff] shadow-[0_0_28px_#4177d955]">✦</span> DevOps Agent</a>
+      <div class="flex gap-[22px] text-sm text-marketing-muted max-tablet:hidden"><a class="no-underline hover:text-marketing-ink" href="#cli">CLI</a><a class="no-underline hover:text-marketing-ink" href="#how">How it works</a><a class="no-underline hover:text-marketing-ink" href="#trust">Trust model</a>{% if authenticated %}<a class="inline-flex items-center gap-[7px] text-marketing-ink no-underline" href="/account"><span class="inline-grid size-[22px] place-items-center rounded-full border border-[#6d9cff] text-[15px] leading-none text-marketing-blue" aria-hidden="true">⌾</span> Account</a>{% else %}<a class="no-underline hover:text-marketing-ink" href="/login">Sign in</a>{% endif %}</div>
     </nav>
-    <section class="hero">
+    <section class="grid min-h-[620px] grid-cols-[1.08fr_0.92fr] items-center gap-[70px] py-[58px] pb-[90px] max-tablet:grid-cols-1 max-tablet:gap-[35px] max-tablet:pt-[35px]">
       <div>
-        <div class="eyebrow">Read-only incident intelligence</div>
-        <h1>Turn alerts into evidence-backed decisions.</h1>
-        <p>DevOps Agent gathers deterministic Kubernetes evidence, explains likely causes, and shows every claim with the evidence that supports it.</p>
-        <div class="actions"><a class="button" href="/login">Open the workspace</a><a class="button secondary" href="#how">See how it works</a></div>
+        <div class="font-mono text-xs leading-[1.2] font-bold tracking-[0.14em] text-marketing-mint uppercase">Read-only incident intelligence</div>
+        <h1 class="my-[18px] max-w-[720px] text-[44px] leading-[1.02] font-semibold tracking-normal text-marketing-ink docs:text-[72px]">Turn alerts into evidence-backed decisions.</h1>
+        <p class="max-w-[610px] text-[19px] text-marketing-muted">DevOps Agent gathers deterministic Kubernetes evidence, explains likely causes, and shows every claim with the evidence that supports it.</p>
+        <div class="mt-[30px] flex flex-wrap gap-3"><a class="inline-flex min-h-[46px] items-center justify-center rounded-[10px] border border-[#719dff] bg-[#6e9eff] px-[18px] font-bold text-[#07101d] no-underline shadow-[0_10px_30px_#5e8ff533]" href="/login">Open the workspace</a><a class="inline-flex min-h-[46px] items-center justify-center rounded-[10px] border border-marketing-line bg-[#121a2a] px-[18px] font-bold text-marketing-ink no-underline" href="#how">See how it works</a></div>
       </div>
-      <div class="signal" aria-label="Example investigation report">
-        <div class="terminal">
-          <div class="terminal-head"><span class="dot"></span> live investigation / checkoutservice</div>
-          <div class="event"><strong>Alert → KubePodCrashLooping</strong><small>namespace: default · severity: critical</small></div>
-          <div class="event"><strong>Hypothesis → missing dependency configuration</strong><small>high confidence · 3 evidence sources</small></div>
-          <div class="evidence">[ev-7f3a] pod status: CrashLoopBackOff<br>[ev-91bc] event: Back-off restarting failed container<br>[ev-c20d] rollout: environment changed</div>
+      <div class="relative min-h-[390px] overflow-hidden rounded-3xl border border-marketing-line bg-gradient-to-br from-[#15223aee] to-[#0d121eee] p-[25px] shadow-[0_28px_80px_#0008] before:absolute before:-top-[90px] before:-right-[70px] before:size-[260px] before:rounded-full before:bg-[#65e5bd]/[0.13] before:blur-sm before:content-['']" aria-label="Example investigation report">
+        <div class="absolute inset-[25px] flex flex-col gap-[14px]">
+          <div class="flex gap-[7px] font-mono text-xs text-marketing-muted"><span class="size-2 rounded-full bg-marketing-mint"></span> live investigation / checkoutservice</div>
+          <div class="mt-5 rounded-xl border border-[#38527e] bg-[#0c1424cc] p-4"><strong class="block text-marketing-blue">Alert → KubePodCrashLooping</strong><small class="text-marketing-muted">namespace: default · severity: critical</small></div>
+          <div class="mt-5 rounded-xl border border-[#38527e] bg-[#0c1424cc] p-4"><strong class="block text-marketing-blue">Hypothesis → missing dependency configuration</strong><small class="text-marketing-muted">high confidence · 3 evidence sources</small></div>
+          <div class="mt-auto border-l-2 border-marketing-mint bg-[#112c2a66] p-[15px] font-mono text-[13px] leading-[1.5] text-[#c9f8e9]">[ev-7f3a] pod status: CrashLoopBackOff<br>[ev-91bc] event: Back-off restarting failed container<br>[ev-c20d] rollout: environment changed</div>
         </div>
       </div>
     </section>
-    <section id="cli" class="bento-section" aria-labelledby="cli-title">
-      <div class="section-heading">
-        <div><div class="eyebrow">The CLI advantage</div><h2 id="cli-title">Stay close to the system when the signal gets noisy.</h2></div>
-        <p>A focused command line for engineers who want trustworthy context without leaving their workflow.</p>
+    <section id="cli" class="py-5 pb-[100px]" aria-labelledby="cli-title">
+      <div class="mb-6 flex items-end justify-between gap-[30px] max-tablet:block">
+        <div><div class="font-mono text-xs leading-[1.2] font-bold tracking-[0.14em] text-marketing-mint uppercase">The CLI advantage</div><h2 id="cli-title" class="mt-2.5 max-w-[570px] text-[32px] leading-[1.02] font-semibold tracking-normal docs:text-[46px]">Stay close to the system when the signal gets noisy.</h2></div>
+        <p class="m-0 max-w-[380px] text-[15px] leading-[1.55] text-marketing-muted max-tablet:mt-4">A focused command line for engineers who want trustworthy context without leaving their workflow.</p>
       </div>
-      <div class="bento-grid">
-        <article class="bento-card bento-lead">
-          <div><span class="card-kicker">01 / Fast path</span><h3>From alert to a useful first move in seconds.</h3><p>Start the agent where you already work. Keep the investigation handoff close to the terminal, not buried in another dashboard.</p></div>
-          <div class="bento-command"><span class="prompt">$</span> devops-agent<br><span class="prompt">&gt;</span> investigate the latest alert<br><span class="success">✓</span> evidence pack ready · read-only</div>
+      <div class="grid auto-rows-[minmax(190px,auto)] grid-cols-12 gap-[14px] max-tablet:block">
+        <article class="relative col-span-7 row-span-2 flex min-h-[382px] flex-col justify-between overflow-hidden rounded-[18px] border border-marketing-line bg-[image:radial-gradient(circle_at_100%_0%,#31588c55,transparent_55%),linear-gradient(145deg,#162642,#0d131f)] p-[22px] after:absolute after:-right-[45px] after:-bottom-[60px] after:size-[140px] after:rounded-full after:border after:border-[#6e9eff]/[0.13] after:content-[''] max-tablet:mb-[14px] max-tablet:min-h-[360px]">
+          <div><span class="font-mono text-[11px] font-bold tracking-[0.12em] text-marketing-mint uppercase">01 / Fast path</span><h3 class="mt-[7px] mb-2 max-w-[470px] text-[26px] leading-[1.04] font-semibold docs:text-[34px]">From alert to a useful first move in seconds.</h3><p class="m-0 max-w-[430px] text-sm leading-[1.55] text-marketing-muted">Start the agent where you already work. Keep the investigation handoff close to the terminal, not buried in another dashboard.</p></div>
+          <div class="mt-7 rounded-xl border border-[#38527e] bg-[#080e18cc] p-4 font-mono text-[13px] leading-[1.8] text-[#c9f8e9]"><span class="text-marketing-blue">$</span> devops-agent<br><span class="text-marketing-blue">&gt;</span> investigate the latest alert<br><span class="text-marketing-mint">✓</span> evidence pack ready · read-only</div>
         </article>
-        <article class="bento-card bento-speed"><div><span class="card-kicker">02 / Less context switching</span><h3>Keep your flow.</h3><p>Ask, inspect, and continue from the same command surface while the incident is still unfolding.</p></div><strong>⌘</strong></article>
-        <article class="bento-card bento-evidence"><div><span class="card-kicker">03 / Trust built in</span><h3>Every claim has receipts.</h3><p>Evidence IDs travel with the answer, so the team can verify the reasoning instead of taking it on faith.</p></div></article>
-        <article class="bento-card bento-handoff"><div><span class="card-kicker">04 / Better handoffs</span><h3>Make the next engineer faster.</h3><p>Turn the terminal session into a concise, shareable starting point for the person taking the next shift.</p></div></article>
-        <article class="bento-card bento-anywhere"><div><span class="card-kicker">05 / Safe by default</span><h3>Observe first.</h3><p>Read-only investigation keeps diagnosis separate from remediation, giving teams clarity before they act.</p></div></article>
-        <article class="bento-card bento-code"><div><span class="card-kicker">06 / Designed for real work</span><h3>Less ceremony. More signal.</h3><p>Use the CLI for the quick question, the web workspace for the durable report, and move between both without losing the thread.</p></div><strong>CLI → evidence → confidence</strong></article>
+        <article class="relative col-span-5 flex min-h-[184px] flex-col justify-between overflow-hidden rounded-[18px] border border-marketing-line bg-gradient-to-br from-[#111b2cdd] to-[#0d131fdd] p-[22px] after:absolute after:-right-[45px] after:-bottom-[60px] after:size-[140px] after:rounded-full after:border after:border-[#6e9eff]/[0.13] after:content-[''] max-tablet:mb-[14px] max-tablet:min-h-[210px]"><div><span class="font-mono text-[11px] font-bold tracking-[0.12em] text-marketing-mint uppercase">02 / Less context switching</span><h3 class="mt-[7px] mb-2 text-lg leading-[1.12] font-semibold docs:text-[22px]">Keep your flow.</h3><p class="m-0 max-w-[430px] text-sm leading-[1.55] text-marketing-muted">Ask, inspect, and continue from the same command surface while the incident is still unfolding.</p></div><strong class="self-end text-[42px] leading-none text-marketing-blue opacity-80">⌘</strong></article>
+        <article class="relative col-span-5 flex min-h-[184px] flex-col justify-between overflow-hidden rounded-[18px] border border-marketing-line bg-gradient-to-br from-[#111b2cdd] to-[#0d131fdd] p-[22px] after:absolute after:-right-[45px] after:-bottom-[60px] after:size-[140px] after:rounded-full after:border after:border-[#6e9eff]/[0.13] after:content-[''] max-tablet:mb-[14px] max-tablet:min-h-[210px]"><div><span class="font-mono text-[11px] font-bold tracking-[0.12em] text-marketing-mint uppercase">03 / Trust built in</span><h3 class="mt-[7px] mb-2 text-lg leading-[1.12] font-semibold docs:text-[22px]">Every claim has receipts.</h3><p class="m-0 max-w-[430px] text-sm leading-[1.55] text-marketing-muted">Evidence IDs travel with the answer, so the team can verify the reasoning instead of taking it on faith.</p></div></article>
+        <article class="relative col-span-4 flex min-h-[184px] flex-col justify-between overflow-hidden rounded-[18px] border border-marketing-line bg-gradient-to-br from-[#111b2cdd] to-[#0d131fdd] p-[22px] after:absolute after:-right-[45px] after:-bottom-[60px] after:size-[140px] after:rounded-full after:border after:border-[#6e9eff]/[0.13] after:content-[''] max-tablet:mb-[14px] max-tablet:min-h-[210px]"><div><span class="font-mono text-[11px] font-bold tracking-[0.12em] text-marketing-mint uppercase">04 / Better handoffs</span><h3 class="mt-[7px] mb-2 text-lg leading-[1.12] font-semibold docs:text-[22px]">Make the next engineer faster.</h3><p class="m-0 max-w-[430px] text-sm leading-[1.55] text-marketing-muted">Turn the terminal session into a concise, shareable starting point for the person taking the next shift.</p></div></article>
+        <article class="relative col-span-4 flex min-h-[184px] flex-col justify-between overflow-hidden rounded-[18px] border border-marketing-line bg-gradient-to-br from-[#111b2cdd] to-[#0d131fdd] p-[22px] after:absolute after:-right-[45px] after:-bottom-[60px] after:size-[140px] after:rounded-full after:border after:border-[#6e9eff]/[0.13] after:content-[''] max-tablet:mb-[14px] max-tablet:min-h-[210px]"><div><span class="font-mono text-[11px] font-bold tracking-[0.12em] text-marketing-mint uppercase">05 / Safe by default</span><h3 class="mt-[7px] mb-2 text-lg leading-[1.12] font-semibold docs:text-[22px]">Observe first.</h3><p class="m-0 max-w-[430px] text-sm leading-[1.55] text-marketing-muted">Read-only investigation keeps diagnosis separate from remediation, giving teams clarity before they act.</p></div></article>
+        <article class="relative col-span-4 flex min-h-[184px] flex-col justify-between overflow-hidden rounded-[18px] border border-marketing-line bg-gradient-to-br from-[#14251f] to-[#0d171e] p-[22px] after:absolute after:-right-[45px] after:-bottom-[60px] after:size-[140px] after:rounded-full after:border after:border-[#6e9eff]/[0.13] after:content-[''] max-tablet:mb-[14px] max-tablet:min-h-[210px]"><div><span class="font-mono text-[11px] font-bold tracking-[0.12em] text-marketing-mint uppercase">06 / Designed for real work</span><h3 class="mt-[7px] mb-2 text-lg leading-[1.12] font-semibold docs:text-[22px]">Less ceremony. More signal.</h3><p class="m-0 max-w-[430px] text-sm leading-[1.55] text-marketing-muted">Use the CLI for the quick question, the web workspace for the durable report, and move between both without losing the thread.</p></div><strong class="text-xl leading-[1.1] text-marketing-orange docs:text-[28px]">CLI → evidence → confidence</strong></article>
       </div>
     </section>
-    <section id="how" class="features">
-      <div class="card"><b>Alert-triggered</b><p>Connect Alertmanager once. Firing and resolved events become durable investigations automatically.</p></div>
-      <div class="card"><b>Evidence first</b><p>Read-only collectors inspect pod state, events, logs, rollouts, services, and endpoints before reasoning begins.</p></div>
-      <div id="trust" class="card"><b>Grounded by design</b><p>Claims without valid evidence citations are removed. If analysis fails, the deterministic context pack still reaches you.</p></div>
+    <section id="how" class="grid grid-cols-3 gap-4 py-5 pb-[100px] max-tablet:grid-cols-1">
+      <div class="rounded-2xl border border-marketing-line bg-[#0e141fbb] p-6"><b class="mb-[9px] block text-[17px]">Alert-triggered</b><p class="m-0 text-marketing-muted">Connect Alertmanager once. Firing and resolved events become durable investigations automatically.</p></div>
+      <div class="rounded-2xl border border-marketing-line bg-[#0e141fbb] p-6"><b class="mb-[9px] block text-[17px]">Evidence first</b><p class="m-0 text-marketing-muted">Read-only collectors inspect pod state, events, logs, rollouts, services, and endpoints before reasoning begins.</p></div>
+      <div id="trust" class="rounded-2xl border border-marketing-line bg-[#0e141fbb] p-6"><b class="mb-[9px] block text-[17px]">Grounded by design</b><p class="m-0 text-marketing-muted">Claims without valid evidence citations are removed. If analysis fails, the deterministic context pack still reaches you.</p></div>
     </section>
-    <footer>READ-ONLY analysis. No actions are taken in your cluster.</footer>
+    <footer class="border-t border-marketing-line py-6 pb-10 text-[13px] text-marketing-muted">READ-ONLY analysis. No actions are taken in your cluster.</footer>
   </div>
 </body>
 </html>

@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 from pathlib import Path
+import os
+import secrets
 from typing import Any
 
 from fastapi import APIRouter, Depends, Form, Header, HTTPException, Request, status
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from agent_server.auth_sessions import AuthSessionService, AuthenticatedUser
+from agent_server.alertmanager_manifests import helm_values, kustomize_bundle, operator_manifest
 from agent_server.persistence.postgres import (
     AlertRow,
     InvestigationEvidenceRow,
@@ -20,12 +23,12 @@ from agent_server.persistence.postgres import (
 from agent_server.persistence.secrets import SecretRepository, mask_secret
 
 
-def _alertmanager_config(secret: str) -> str:
+def _alertmanager_config(secret: str, endpoint: str = "${DEVOPS_AGENT_PUBLIC_BASE_URL}/webhook/alertmanager") -> str:
     return (
         "receivers:\n"
         "  - name: incident-investigation-webhook\n"
         "    webhook_configs:\n"
-        "      - url: ${DEVOPS_AGENT_PUBLIC_BASE_URL}/webhook/alertmanager\n"
+        f"      - url: {endpoint}\n"
         "        send_resolved: true\n"
         "        http_config:\n"
         "          authorization:\n"
@@ -49,6 +52,11 @@ def create_settings_router(
 ) -> APIRouter:
     router = APIRouter()
     templates = Jinja2Templates(directory=template_dir)
+    manifest_artifacts: dict[str, tuple[str, str, str]] = {}
+
+    def webhook_endpoint(request: Request) -> str:
+        base_url = os.getenv("DEVOPS_AGENT_PUBLIC_BASE_URL", str(request.base_url).rstrip("/"))
+        return base_url.rstrip("/") + "/webhook/alertmanager"
 
     def current_user(
         request: Request,
@@ -137,6 +145,9 @@ def create_settings_router(
     ):
         store = require_secret_store()
         _, raw_secret = await store.create_webhook_secret(user.user_id, name.strip())
+        artifact_id = secrets.token_urlsafe(24)
+        endpoint = webhook_endpoint(request)
+        manifest_artifacts[artifact_id] = (user.user_id, endpoint, raw_secret)
         webhooks = await store.list_webhook_secrets(user.user_id)
         resources = await store.list_resource_secrets(user.user_id)
         return templates.TemplateResponse(
@@ -148,8 +159,38 @@ def create_settings_router(
                 "resources": resources,
                 "mask_secret": mask_secret,
                 "new_webhook_secret": raw_secret,
-                "alertmanager_config": _alertmanager_config(raw_secret),
+                "webhook_endpoint": endpoint,
+                "alertmanager_config": _alertmanager_config(raw_secret, endpoint),
+                "manifest_id": artifact_id,
             },
+        )
+
+    @router.get("/settings/webhook-manifests/{artifact_id}/{manifest_format}", include_in_schema=False)
+    async def download_webhook_manifest(
+        artifact_id: str,
+        manifest_format: str,
+        user: AuthenticatedUser = Depends(browser_user),
+    ):
+        artifact = manifest_artifacts.get(artifact_id)
+        if artifact is None or artifact[0] != user.user_id:
+            raise HTTPException(status_code=404, detail="Manifest not found or expired")
+        _, endpoint, raw_secret = artifact
+        if manifest_format == "kustomize":
+            return Response(
+                content=kustomize_bundle(endpoint, raw_secret),
+                media_type="application/zip",
+                headers={"Content-Disposition": 'attachment; filename="alertmanager-webhook-kustomize.zip"'},
+            )
+        if manifest_format == "helm":
+            content, filename = helm_values(endpoint, raw_secret), "alertmanager-webhook-values.yaml"
+        elif manifest_format == "operator":
+            content, filename = operator_manifest(endpoint, raw_secret), "alertmanagerconfig.yaml"
+        else:
+            raise HTTPException(status_code=404, detail="Unknown manifest format")
+        return Response(
+            content=content,
+            media_type="application/yaml",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
 
     @router.post("/settings/webhook-secrets/{secret_id}/revoke", include_in_schema=False)

@@ -222,3 +222,5 @@ todos.md
 
 # vscode
 .vscode/
+node_modules/
+.npm-cache/

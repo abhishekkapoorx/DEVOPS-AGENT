@@ -58,6 +58,42 @@ def test_landing_page_is_public_and_contains_product_message():
     assert "Sign in" in response.text
     assert "The CLI advantage" in response.text
     assert "Less context switching" in response.text
+    assert 'href="/static/app.css"' in response.text
+
+
+def test_documentation_is_repository_backed_and_navigable():
+    app = FastAPI()
+    app.include_router(create_website_router(Path("agent_server/templates")))
+
+    response = TestClient(app).get("/docs/investigations/alertmanager")
+
+    assert response.status_code == 200
+    assert "Plain Deployment" in response.text
+    assert "Helm" in response.text
+    assert "Prometheus Operator" in response.text
+    assert "Previous" in response.text
+    assert "CLI" in response.text
+    assert "Investigation" in response.text
+
+
+def test_runtime_image_includes_repository_documentation():
+    dockerfile = Path("agent_server/api/Dockerfile").read_text(encoding="utf-8")
+    dockerignore = Path(".dockerignore").read_text(encoding="utf-8")
+
+    assert "COPY docs/website docs/website" in dockerfile
+    assert "!docs/website/**" in dockerignore
+    assert "npm run css:build" in dockerfile
+
+
+def test_tailwind_stylesheet_is_served_and_contains_shared_components():
+    app = FastAPI()
+    app.include_router(create_website_router(Path("agent_server/templates")))
+
+    response = TestClient(app).get("/static/app.css")
+
+    assert response.status_code == 200
+    assert ".ui-button" in response.text
+    assert ".ui-input" in response.text
 
 
 def test_authenticated_landing_page_shows_account_link_instead_of_sign_in():

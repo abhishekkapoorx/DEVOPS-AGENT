@@ -30,6 +30,7 @@ server = [
     "langchain-groq>=1,<2",
     "langchain-ollama>=1,<2",
     "langchain-openai>=1,<2",
+    "markdown>=3.8,<4",
     "langgraph-checkpoint-postgres>=3,<4",
     "psycopg[binary]>=3.2,<4",
     "pydantic>=2.11,<3",

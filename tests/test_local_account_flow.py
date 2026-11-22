@@ -106,7 +106,7 @@ def test_browser_signup_signin_and_current_identity():
             data={"user_code": started["user_code"], "email": "Person@Example.com", "password": "a-long-test-password"},
         )
         assert approved.status_code == 200
-        assert 'class="page-card"' in approved.text
+        assert 'class="ui-page-card"' in approved.text
         assert "Signed in successfully" in approved.text
         # A new provider instance can recover the approval from the durable repository.
         service.approval_provider = PostgresDeviceApprovalProvider(repository, "http://testserver")

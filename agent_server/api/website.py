@@ -5,10 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastapi import APIRouter, Form, HTTPException, Request, status
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from agent_server.accounts import AccountError, LocalAccountService
 from agent_server.auth_sessions import AuthSessionService
+from agent_server.docs import DOCS, load_doc
 from fastapi.responses import RedirectResponse
 
 
@@ -20,6 +22,12 @@ def create_website_router(
 ) -> APIRouter:
     router = APIRouter()
     templates = Jinja2Templates(directory=template_dir)
+    docs_dir = template_dir.parent.parent / "docs" / "website"
+    static_files = StaticFiles(directory=template_dir.parent / "static")
+
+    @router.get("/static/{asset_path:path}", include_in_schema=False)
+    async def static_asset(request: Request, asset_path: str):
+        return await static_files.get_response(asset_path, request.scope)
 
     @router.get("/", include_in_schema=False)
     async def landing_page(request: Request):
@@ -43,6 +51,28 @@ def create_website_router(
             request=request,
             name="login.html",
             context={"title": "Sign in", "mode": mode if mode in {"signin", "signup"} else "signin", "message": None},
+        )
+
+    @router.get("/docs/{slug:path}", include_in_schema=False)
+    async def documentation_page(request: Request, slug: str):
+        loaded = load_doc(slug, docs_dir)
+        if loaded is None:
+            raise HTTPException(status_code=404, detail="Documentation page not found")
+        page, html, index = loaded
+        previous_page = DOCS[index - 1] if index else None
+        next_page = DOCS[index + 1] if index + 1 < len(DOCS) else None
+        return templates.TemplateResponse(
+            request=request,
+            name="documentation.html",
+            context={
+                "title": page["title"],
+                "docs": DOCS,
+                "active_slug": page["slug"],
+                "doc_title": page["title"],
+                "doc_html": html,
+                "previous_page": previous_page,
+                "next_page": next_page,
+            },
         )
 
     async def browser_tokens(user_id: str) -> RedirectResponse:

@@ -1,0 +1,12 @@
+{
+  "name": "devops-agent-ui",
+  "private": true,
+  "scripts": {
+    "css:build": "tailwindcss -i agent_server/static/src/app.css -o agent_server/static/app.css --minify",
+    "css:watch": "tailwindcss -i agent_server/static/src/app.css -o agent_server/static/app.css --watch=always"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "4.3.5",
+    "tailwindcss": "4.3.5"
+  }
+}

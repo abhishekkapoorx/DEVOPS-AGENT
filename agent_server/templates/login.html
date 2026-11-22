@@ -3,26 +3,22 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ "Create account" if mode == "signup" else "Sign in" }} | DevOps Agent</title>
-  <style>
-    :root { color-scheme:dark; --bg:#090b12; --panel:#111827; --line:#293650; --text:#f4f7fb; --muted:#9aa8bd; --blue:#72a8ff; --danger:#ff9d9d; }
-    * { box-sizing:border-box; } body { display:grid; min-height:100vh; place-items:center; margin:0; padding:20px; color:var(--text); background:radial-gradient(circle at 50% 0,#1b3158,transparent 32rem),var(--bg); font:15px/1.5 Inter,system-ui,sans-serif; }
-    .card { width:min(100%,460px); padding:32px; border:1px solid var(--line); border-radius:18px; background:#111827ee; box-shadow:0 30px 90px #0008; }
-    a { color:var(--blue); } h1 { margin:0 0 8px; letter-spacing:-.04em; } p { color:var(--muted); } .message { min-height:24px; color:var(--danger); }
-    .tabs { display:flex; gap:18px; margin:22px 0; border-bottom:1px solid var(--line); } .tabs a { padding-bottom:10px; color:var(--muted); } .tabs a.active { color:var(--text); border-bottom:2px solid var(--blue); }
-    label { display:block; margin:14px 0; color:var(--muted); } input { display:block; width:100%; margin-top:6px; padding:13px; border:1px solid var(--line); border-radius:8px; background:#0b111e; color:var(--text); }
-    button { width:100%; margin-top:10px; padding:13px 16px; border:1px solid var(--blue); border-radius:9px; background:var(--blue); color:#08111e; font-weight:750; cursor:pointer; }
-  </style>
+  <link rel="stylesheet" href="/static/app.css">
 </head>
-<body><main class="card">
-  <p>DevOps Agent / Website account</p>
-  <h1>{{ "Create your account" if mode == "signup" else "Welcome back" }}</h1>
-  <p>Use the website account directly. This route is separate from the CLI device login flow.</p>
-  <nav class="tabs"><a class="{{ 'active' if mode == 'signin' else '' }}" href="/login?mode=signin">Sign in</a><a class="{{ 'active' if mode == 'signup' else '' }}" href="/login?mode=signup">Create an account</a></nav>
-  {% if message %}<div class="message" role="alert">{{ message }}</div>{% endif %}
+<body class="grid min-h-screen place-items-center bg-[image:radial-gradient(circle_at_50%_0%,#1b3158,transparent_32rem)] bg-marketing-bg p-5 font-sans text-[15px] leading-[1.5] text-marketing-ink">
+<main class="w-full max-w-[460px] rounded-[18px] border border-marketing-line bg-[#111827ee] p-8 shadow-[0_30px_90px_#0008]">
+  <p class="text-marketing-muted">DevOps Agent / Website account</p>
+  <h1 class="mb-2 text-3xl font-semibold tracking-normal">{{ "Create your account" if mode == "signup" else "Welcome back" }}</h1>
+  <p class="text-marketing-muted">Use the website account directly. This route is separate from the CLI device login flow.</p>
+  <nav class="my-[22px] flex gap-[18px] border-b border-marketing-line">
+    <a class="border-b-2 px-0 pb-2.5 text-marketing-muted {% if mode == 'signin' %}border-marketing-blue text-marketing-ink{% else %}border-transparent{% endif %}" href="/login?mode=signin" {% if mode == 'signin' %}aria-current="page"{% endif %}>Sign in</a>
+    <a class="border-b-2 px-0 pb-2.5 text-marketing-muted {% if mode == 'signup' %}border-marketing-blue text-marketing-ink{% else %}border-transparent{% endif %}" href="/login?mode=signup" {% if mode == 'signup' %}aria-current="page"{% endif %}>Create an account</a>
+  </nav>
+  {% if message %}<div class="min-h-6 text-danger" role="alert">{{ message }}</div>{% endif %}
   <form method="post" action="{{ '/website/signup' if mode == 'signup' else '/website/login' }}">
-    <label>Email<input type="email" name="email" autocomplete="email" required maxlength="254"></label>
-    <label>Password<input type="password" name="password" autocomplete="{{ 'new-password' if mode == 'signup' else 'current-password' }}" required minlength="12" maxlength="1024"></label>
-    <button type="submit">{{ "Create account" if mode == "signup" else "Sign in" }}</button>
+    <label class="ui-field my-3.5 text-marketing-muted">Email<input class="ui-input h-auto rounded-lg border-marketing-line bg-[#0b111e] p-[13px] text-marketing-ink" type="email" name="email" autocomplete="email" required maxlength="254"></label>
+    <label class="ui-field my-3.5 text-marketing-muted">Password<input class="ui-input h-auto rounded-lg border-marketing-line bg-[#0b111e] p-[13px] text-marketing-ink" type="password" name="password" autocomplete="{{ 'new-password' if mode == 'signup' else 'current-password' }}" required minlength="12" maxlength="1024"></label>
+    <button class="ui-button mt-2.5 rounded-[9px] border-marketing-blue bg-marketing-blue px-4 py-[13px] font-extrabold text-[#08111e]" type="submit">{{ "Create account" if mode == "signup" else "Sign in" }}</button>
   </form>
-  <p><a href="/">Back to home</a></p>
+  <p class="mt-4"><a class="text-marketing-blue" href="/">Back to home</a></p>
 </main></body></html>

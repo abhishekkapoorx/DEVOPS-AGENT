@@ -1,26 +1,40 @@
 {% extends "settings_base.html" %}
 {% block settings_content %}
-<main class="page-card wide" aria-labelledby="settings-title">
-  <p class="eyebrow">DevOps Agent / Integrations</p>
-  <h1 id="settings-title">Secrets and webhooks</h1>
-  <p class="intro">Secrets are write-only from the website. Copy a webhook secret immediately after creating it.</p>
+<main class="ui-page-card ui-page-card-wide" aria-labelledby="settings-title">
+  <p class="ui-eyebrow">DevOps Agent / Integrations</p>
+  <h1 id="settings-title" class="ui-title">Secrets and webhooks</h1>
+  <p class="ui-intro">Secrets are write-only from the website. Copy a webhook secret immediately after creating it.</p>
   {% if new_webhook_secret %}
-  <p class="notice" role="alert"><strong>Copy this webhook secret now:</strong><br><code>{{ new_webhook_secret }}</code><br>It will not be shown again.</p>
-  <pre><code>{{ alertmanager_config }}</code></pre>
+  <section class="my-[26px] mb-[34px] border border-brand/35 bg-gradient-to-br from-brand/10 to-brand/[0.03] p-[22px]" aria-labelledby="webhook-created-title">
+    <p class="ui-eyebrow">Webhook created</p>
+    <h2 id="webhook-created-title" class="mb-2 text-[21px] font-semibold">Connect your Alertmanager</h2>
+    <p class="ui-intro mb-[17px]">Save the token now. It will not be shown again after you leave this page.</p>
+    <div class="mb-[18px] grid gap-[9px] [&>div]:grid [&>div]:grid-cols-[100px_minmax(0,1fr)] [&>div]:items-center [&>div]:gap-2.5 [&_span]:text-[11px] [&_span]:tracking-[0.08em] [&_span]:text-quiet [&_span]:uppercase [&_code]:[overflow-wrap:anywhere]">
+      <div><span>Endpoint</span><code class="text-brand-hover">{{ webhook_endpoint }}</code></div>
+      <div><span>Bearer token</span><code class="text-brand-hover">{{ new_webhook_secret }}</code></div>
+    </div>
+    <div class="mt-[18px] grid gap-[9px] border-t border-border-default pt-[18px] [&>div:first-child]:mb-1 [&>div:first-child]:grid [&>div:first-child]:gap-[3px] [&>div>strong]:text-[13px] [&>div>small]:text-quiet">
+      <div><strong>Choose your Alertmanager installation</strong><small>Each artifact keeps the token in a Kubernetes Secret.</small></div>
+      <a class="flex justify-between gap-3.5 border border-border-default bg-black/10 px-3 py-[11px] text-[13px] text-ink no-underline hover:border-brand hover:bg-brand-soft" href="/settings/webhook-manifests/{{ manifest_id }}/kustomize">Download Kustomize bundle <small class="text-quiet">Plain Deployment · .zip</small></a>
+      <a class="flex justify-between gap-3.5 border border-border-default bg-black/10 px-3 py-[11px] text-[13px] text-ink no-underline hover:border-brand hover:bg-brand-soft" href="/settings/webhook-manifests/{{ manifest_id }}/helm">Download Helm values <small class="text-quiet">Helm · .yaml</small></a>
+      <a class="flex justify-between gap-3.5 border border-border-default bg-black/10 px-3 py-[11px] text-[13px] text-ink no-underline hover:border-brand hover:bg-brand-soft" href="/settings/webhook-manifests/{{ manifest_id }}/operator">Download Operator manifest <small class="text-quiet">Prometheus Operator · .yaml</small></a>
+    </div>
+    <details class="mt-[18px] text-xs text-muted"><summary class="cursor-pointer">Preview receiver configuration</summary><pre class="ui-code-block mt-3"><code>{{ alertmanager_config }}</code></pre></details>
+  </section>
   {% endif %}
-  <h2>Alertmanager webhooks</h2>
+  <h2 class="mt-7 mb-3 text-base font-semibold">Alertmanager webhooks</h2>
   <form method="post" action="/settings/webhook-secrets">
-    <label class="field">Name<input name="name" placeholder="kind-alertmanager" required maxlength="128"></label>
-    <button type="submit">Generate webhook secret</button>
+    <label class="ui-field">Name<input class="ui-input" name="name" placeholder="kind-alertmanager" required maxlength="128"></label>
+    <button class="ui-button" type="submit">Generate webhook secret</button>
   </form>
-  <ul>{% for item in webhooks %}<li>{{ item.name }} <small>{{ item.created_at }}</small><form method="post" action="/settings/webhook-secrets/{{ item.id }}/revoke"><button class="secondary" type="submit">Revoke</button></form></li>{% else %}<li>No webhook secrets.</li>{% endfor %}</ul>
-  <h2>Provider secrets</h2>
+  <ul class="m-0 list-disc pl-[22px]">{% for item in webhooks %}<li class="mb-3">{{ item.name }} <small class="text-quiet">{{ item.created_at }}</small><form class="ml-2.5 inline" method="post" action="/settings/webhook-secrets/{{ item.id }}/revoke"><button class="ui-button ui-button-secondary min-h-[30px] w-auto px-2 py-1 text-xs" type="submit">Revoke</button></form></li>{% else %}<li class="mb-3">No webhook secrets.</li>{% endfor %}</ul>
+  <h2 class="mt-7 mb-3 text-base font-semibold">Provider secrets</h2>
   <form method="post" action="/settings/resource-secrets">
-    <label class="field">Provider<input name="provider" placeholder="github" required maxlength="128"></label>
-    <label class="field">Name<input name="name" placeholder="personal-token" required maxlength="128"></label>
-    <label class="field">Secret value<input type="password" name="value" required maxlength="100000"></label>
-    <button type="submit">Save encrypted secret</button>
+    <label class="ui-field">Provider<input class="ui-input" name="provider" placeholder="github" required maxlength="128"></label>
+    <label class="ui-field">Name<input class="ui-input" name="name" placeholder="personal-token" required maxlength="128"></label>
+    <label class="ui-field">Secret value<input class="ui-input" type="password" name="value" required maxlength="100000"></label>
+    <button class="ui-button" type="submit">Save encrypted secret</button>
   </form>
-  <ul>{% for item in resources %}<li>{{ item.provider }}/{{ item.name }} <small>{{ item.updated_at }}</small><form method="post" action="/settings/resource-secrets/{{ item.id }}/delete"><button class="secondary" type="submit">Delete</button></form></li>{% else %}<li>No provider secrets.</li>{% endfor %}</ul>
+  <ul class="m-0 list-disc pl-[22px]">{% for item in resources %}<li class="mb-3">{{ item.provider }}/{{ item.name }} <small class="text-quiet">{{ item.updated_at }}</small><form class="ml-2.5 inline" method="post" action="/settings/resource-secrets/{{ item.id }}/delete"><button class="ui-button ui-button-secondary min-h-[30px] w-auto px-2 py-1 text-xs" type="submit">Delete</button></form></li>{% else %}<li class="mb-3">No provider secrets.</li>{% endfor %}</ul>
 </main>
 {% endblock %}

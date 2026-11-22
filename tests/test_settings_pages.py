@@ -71,6 +71,30 @@ def test_settings_page_generates_one_time_webhook_secret():
     assert store.webhooks[0].name == "kind-alertmanager"
 
 
+def test_settings_page_offers_all_alertmanager_installation_formats():
+    client, _ = _client()
+
+    response = client.post("/settings/webhook-secrets", data={"name": "kind-alertmanager"})
+
+    assert response.status_code == 200
+    assert "Download Kustomize bundle" in response.text
+    assert "Download Helm values" in response.text
+    assert "Download Operator manifest" in response.text
+    artifact_id = response.text.split("/settings/webhook-manifests/", 1)[1].split("/", 1)[0]
+
+    kustomize = client.get(f"/settings/webhook-manifests/{artifact_id}/kustomize")
+    helm = client.get(f"/settings/webhook-manifests/{artifact_id}/helm")
+    operator = client.get(f"/settings/webhook-manifests/{artifact_id}/operator")
+
+    assert kustomize.status_code == 200
+    assert kustomize.headers["content-type"] == "application/zip"
+    assert b"webhook-secret.yaml" in kustomize.content
+    assert helm.status_code == 200
+    assert "credentials_file:" in helm.text
+    assert operator.status_code == 200
+    assert "kind: AlertmanagerConfig" in operator.text
+
+
 def test_settings_json_endpoint_never_lists_raw_secret():
     client, _ = _client()
     client.post("/settings/webhook-secrets", data={"name": "kind-alertmanager"})

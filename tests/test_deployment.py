@@ -121,8 +121,8 @@ def test_development_approval_page_escapes_identity_and_ignores_form_identity():
     )
 
     assert "&lt;developer&gt; &amp; admin" in page.text
-    assert 'class="page-card"' in page.text
+    assert 'class="ui-page-card"' in page.text
     assert decision.status_code == 200
-    assert 'class="page-card"' in decision.text
+    assert 'class="ui-page-card"' in decision.text
     approval = asyncio.run(provider.get_device_approval(presentation.approval_id))
     assert approval.user_id == "<developer> & admin"

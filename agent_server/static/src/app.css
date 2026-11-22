@@ -1,0 +1,179 @@
+@import "tailwindcss";
+
+@source "../../templates/**/*.html";
+
+@theme {
+  --breakpoint-mobile: 480px;
+  --breakpoint-tablet: 760px;
+  --breakpoint-docs: 800px;
+  --font-sans: Inter, ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, monospace;
+  --color-canvas: #0a0b0d;
+  --color-surface: #111317;
+  --color-inset: #07080a;
+  --color-border-subtle: #1e2229;
+  --color-border-default: #2a2f38;
+  --color-border-strong: #3a414d;
+  --color-ink: #e8eaed;
+  --color-muted: #9aa1ac;
+  --color-quiet: #858c98;
+  --color-brand: #4f8cff;
+  --color-brand-hover: #6fa0ff;
+  --color-brand-active: #3a74e6;
+  --color-brand-soft: rgb(79 140 255 / 12%);
+  --color-danger: #ff5c6c;
+  --color-danger-soft: rgb(255 92 108 / 12%);
+  --color-mint: #52d6a2;
+  --color-amber: #ffc477;
+  --color-marketing-bg: #090b12;
+  --color-marketing-panel: #101522;
+  --color-marketing-line: #263149;
+  --color-marketing-ink: #f4f7fb;
+  --color-marketing-muted: #9aa8bd;
+  --color-marketing-blue: #72a8ff;
+  --color-marketing-mint: #69e6bd;
+  --color-marketing-orange: #ffc477;
+}
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  html {
+    @apply min-h-full bg-canvas;
+  }
+
+  body {
+    @apply m-0 grid min-h-screen place-items-center bg-canvas p-6 font-sans text-sm leading-6 text-ink;
+  }
+
+  a:focus-visible,
+  button:focus-visible {
+    @apply outline-2 outline-offset-2 outline-brand;
+  }
+
+  button {
+    font: inherit;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      scroll-behavior: auto !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@layer components {
+  .ui-page-card {
+    @apply w-full max-w-[420px] border border-border-subtle bg-surface p-6;
+  }
+
+  .ui-page-card-wide {
+    @apply max-w-[900px] self-start;
+  }
+
+  .ui-eyebrow {
+    @apply mb-3 font-mono text-[11px] leading-[1.4] font-medium tracking-[0.06em] text-quiet uppercase;
+  }
+
+  .ui-title {
+    @apply mb-2 text-2xl leading-[1.25] font-semibold text-ink;
+  }
+
+  .ui-intro {
+    @apply mb-5 text-muted;
+  }
+
+  .ui-notice {
+    @apply mb-4 border border-danger/35 border-l-[3px] border-l-danger bg-danger-soft px-3 py-2.5 text-ink;
+  }
+
+  .ui-field {
+    @apply mb-4 block font-medium text-ink;
+  }
+
+  .ui-input {
+    @apply mt-1.5 block h-11 w-full border border-border-default bg-inset px-3 text-sm font-normal text-ink transition-colors duration-150 placeholder:text-quiet hover:border-border-strong focus-visible:border-brand focus-visible:ring-3 focus-visible:ring-brand/15 focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-brand;
+  }
+
+  .ui-hint {
+    @apply mt-1 block text-xs font-normal text-quiet;
+  }
+
+  .ui-button {
+    @apply inline-flex min-h-11 w-full items-center justify-center border border-brand bg-brand px-3.5 py-2.5 text-sm font-medium text-canvas transition-colors duration-150 hover:border-brand-hover hover:bg-brand-hover active:bg-brand-active;
+  }
+
+  .ui-button-secondary {
+    @apply border-border-strong bg-transparent text-ink hover:border-brand-hover hover:bg-brand-soft;
+  }
+
+  .ui-fine-print {
+    @apply mt-4 border-t border-border-subtle pt-4 text-xs text-quiet;
+  }
+
+  .ui-code-block {
+    @apply overflow-auto border border-border-default bg-inset p-3 text-muted;
+  }
+
+  .ui-status-list {
+    @apply m-0 list-inside list-disc pl-0;
+  }
+
+  .docs-prose {
+    @apply text-base leading-[1.75] text-muted;
+  }
+
+  .docs-prose h1 {
+    @apply mb-[18px] text-3xl leading-[1.08] font-bold text-ink;
+  }
+
+  .docs-prose h2 {
+    @apply mt-[46px] mb-3 border-t border-border-subtle pt-[22px] text-[22px] font-semibold text-ink;
+  }
+
+  .docs-prose h3 {
+    @apply mt-8 mb-2 text-[17px] font-semibold text-ink;
+  }
+
+  .docs-prose p {
+    @apply mb-[19px];
+  }
+
+  .docs-prose a {
+    @apply text-brand-hover underline underline-offset-2;
+  }
+
+  .docs-prose code {
+    @apply border border-border-default bg-inset px-1 py-0.5 text-[0.86em] text-[#b9d0ff];
+  }
+
+  .docs-prose pre {
+    @apply my-5 mb-6 overflow-auto border border-border-default bg-inset/70 p-[18px] font-mono text-[13px] leading-[1.7] text-[#bac4d2];
+  }
+
+  .docs-prose pre code {
+    @apply border-0 bg-transparent p-0 text-inherit;
+  }
+
+  .docs-prose ul,
+  .docs-prose ol {
+    @apply mb-[22px] list-outside pl-[25px];
+  }
+
+  .docs-prose ul {
+    @apply list-disc;
+  }
+
+  .docs-prose ol {
+    @apply list-decimal;
+  }
+
+  .docs-prose li {
+    @apply mb-2;
+  }
+}
