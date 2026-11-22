@@ -10,7 +10,6 @@ COPY pyproject.toml README.md ./
 COPY agent_core agent_core
 COPY agent_protocol agent_protocol
 COPY agent_server agent_server
-COPY docs/website docs/website
 COPY alembic.ini ./
 COPY migrations migrations
 

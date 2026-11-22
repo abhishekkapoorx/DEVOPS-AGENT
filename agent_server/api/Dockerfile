@@ -19,7 +19,6 @@ COPY agent_core agent_core
 COPY agent_protocol agent_protocol
 COPY agent_server agent_server
 COPY --from=ui-assets /ui/agent_server/static/app.css agent_server/static/app.css
-COPY docs/website docs/website
 COPY alembic.ini ./
 COPY migrations migrations
 

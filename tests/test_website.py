@@ -1,5 +1,7 @@
 from pathlib import Path
 from datetime import datetime, timezone
+from io import BytesIO
+from zipfile import ZipFile
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -8,6 +10,7 @@ from agent_server.accounts import LocalAccount
 from agent_server.auth import issue_access_token
 from agent_server.api.website import create_website_router
 from agent_server.auth_sessions import AuthSessionService
+from agent_server.docs import DOCS
 from tests.test_auth_sessions import MemoryAuthRepository
 
 
@@ -83,13 +86,63 @@ def test_documentation_is_repository_backed_and_navigable():
     assert 'href="/"' in response.text
 
 
+def test_cli_documentation_covers_tools_and_slash_commands():
+    app = FastAPI()
+    app.include_router(create_website_router(Path("agent_server/templates")))
+    client = TestClient(app)
+
+    overview = client.get("/docs/cli")
+    slash_commands = client.get("/docs/cli/slash-commands")
+    files_tool = client.get("/docs/cli/tools/files")
+
+    assert overview.status_code == 200
+    assert "Tools Available" in overview.text
+    assert 'href="/docs/cli/tools/aws"' in overview.text
+    assert "does not invoke a shell" in overview.text
+    assert slash_commands.status_code == 200
+    assert "/resume" in slash_commands.text
+    assert "conversation-id" in slash_commands.text
+    assert files_tool.status_code == 200
+    assert "Linux" in files_tool.text
+    assert "Windows" in files_tool.text
+    for page in DOCS:
+        assert client.get(f"/docs/{page['slug']}").status_code == 200
+
+
+def test_alertmanager_docs_link_to_downloadable_safe_manifest_examples():
+    app = FastAPI()
+    app.include_router(create_website_router(Path("agent_server/templates")))
+    client = TestClient(app)
+
+    docs = client.get("/docs/investigations/alertmanager")
+    kustomize = client.get("/docs/downloads/alertmanager/kustomize.zip")
+    helm = client.get("/docs/downloads/alertmanager/helm.yaml")
+    operator = client.get("/docs/downloads/alertmanager/operator.yaml")
+
+    assert 'href="/docs/downloads/alertmanager/kustomize.zip"' in docs.text
+    assert kustomize.headers["content-disposition"].startswith("attachment;")
+    assert helm.headers["content-disposition"].startswith("attachment;")
+    assert operator.headers["content-disposition"].startswith("attachment;")
+    with ZipFile(BytesIO(kustomize.content)) as bundle:
+        assert "kustomization.yaml" in bundle.namelist()
+        assert b"REPLACE_WITH_WEBHOOK_TOKEN" in bundle.read("webhook-secret.yaml")
+    assert "REPLACE_WITH_WEBHOOK_TOKEN" in helm.text
+    assert "YOUR_AGENT_HOST" in helm.text
+    assert "REPLACE_WITH_WEBHOOK_TOKEN" in operator.text
+    assert "YOUR_AGENT_HOST" in operator.text
+
+
 def test_runtime_image_includes_repository_documentation():
-    dockerfile = Path("agent_server/api/Dockerfile").read_text(encoding="utf-8")
+    dockerfiles = (
+        Path("agent_server/api/Dockerfile").read_text(encoding="utf-8"),
+        Path("agent_server/investigations/Dockerfile").read_text(encoding="utf-8"),
+    )
     dockerignore = Path(".dockerignore").read_text(encoding="utf-8")
 
-    assert "COPY docs/website docs/website" in dockerfile
-    assert "!docs/website/**" in dockerignore
-    assert "npm run css:build" in dockerfile
+    assert all("COPY agent_server agent_server" in dockerfile for dockerfile in dockerfiles)
+    assert all("COPY docs/website docs/website" not in dockerfile for dockerfile in dockerfiles)
+    assert "!docs/website/**" not in dockerignore
+    assert "npm run css:build" in dockerfiles[0]
 
 
 def test_tailwind_stylesheet_is_served_and_contains_shared_components():

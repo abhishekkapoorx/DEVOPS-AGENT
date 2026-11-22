@@ -24,8 +24,6 @@ node_modules/
 # Files not needed by the runtime image
 tests/
 docs/*
-!docs/website/
-!docs/website/**
 incident-investigation-lab/
 build/
 dist/
