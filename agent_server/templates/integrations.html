@@ -1,0 +1,43 @@
+{% extends "settings_base.html" %}
+{% block settings_content %}
+<main class="ui-page-card ui-page-card-wide" aria-labelledby="integrations-title">
+  <p class="ui-eyebrow">DevOps Agent / Settings</p>
+  <h1 id="integrations-title" class="ui-title">Integrations</h1>
+  <p class="ui-intro">Connect investigation reports to external destinations. Credentials are encrypted and never shown again after saving.</p>
+  {% if message %}<p class="ui-notice" role="alert">{{ message }}</p>{% endif %}
+
+  <section class="mt-7 border border-border-default bg-inset p-[22px]" aria-labelledby="slack-title">
+    <div class="flex flex-wrap items-start justify-between gap-3">
+      <div>
+        <h2 id="slack-title" class="mb-1 text-base font-semibold">Slack</h2>
+        <p class="ui-hint">Posts a redacted briefing when an investigation completes.</p>
+      </div>
+      <span class="ui-hint">{% if slack and slack.enabled %}Enabled{% else %}Not enabled{% endif %}</span>
+    </div>
+    {% if slack %}
+    <dl class="my-4 grid gap-2 text-[13px] [&>div]:grid [&>div]:grid-cols-[110px_minmax(0,1fr)] [&>div]:gap-2 [&_dt]:text-quiet">
+      <div><dt>Name</dt><dd class="m-0">{{ slack.display_name }}</dd></div>
+      <div><dt>Webhook</dt><dd class="m-0"><code>{{ slack_webhook_url }}</code></dd></div>
+      <div><dt>Updated</dt><dd class="m-0">{{ slack.updated_at }}</dd></div>
+    </dl>
+    {% endif %}
+    <form method="post" action="/settings/integrations" class="grid gap-3">
+      <label class="ui-field">Display name<input class="ui-input" name="display_name" placeholder="Slack" required maxlength="128" value="{{ slack.display_name if slack else 'Slack' }}"></label>
+      <label class="ui-field">Webhook URL<input class="ui-input" type="password" name="webhook_url" placeholder="https://hooks.slack.com/services/..." required maxlength="2048" autocomplete="off"></label>
+      <label class="flex items-center gap-2 text-[13px] text-muted"><input type="checkbox" name="enabled" value="true" {% if slack and slack.enabled %}checked{% endif %}> Use this integration for investigation reports</label>
+      <div class="flex flex-wrap gap-2.5">
+        <button class="ui-button" type="submit">Save Slack integration</button>
+        {% if slack and slack.enabled %}
+        <button class="ui-button ui-button-secondary" type="submit" form="slack-test-form">Send test message</button>
+        {% endif %}
+      </div>
+    </form>
+    {% if slack %}
+    <div class="mt-4 flex flex-wrap gap-3 border-t border-border-default pt-4">
+      <form id="slack-test-form" method="post" action="/settings/integrations/slack/test"></form>
+      <form method="post" action="/settings/integrations/slack/delete"><button class="ui-button ui-button-secondary min-h-[30px] w-auto px-2 py-1 text-xs" type="submit">Delete integration</button></form>
+    </div>
+    {% endif %}
+  </section>
+</main>
+{% endblock %}

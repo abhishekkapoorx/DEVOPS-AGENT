@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     DateTime,
     ForeignKey,
     Index,
@@ -274,6 +275,25 @@ class UserSecretRow(Base):
     key_version: Mapped[str] = mapped_column(String(32))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class IntegrationRow(Base):
+    __tablename__ = "integrations"
+    __table_args__ = (
+        UniqueConstraint("owner_user_id", "provider", name="uq_integrations_owner_provider"),
+        Index("ix_integrations_owner_provider_enabled", "owner_user_id", "provider", "enabled"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    owner_user_id: Mapped[str] = mapped_column(String(255), index=True)
+    provider: Mapped[str] = mapped_column(String(32))
+    display_name: Mapped[str] = mapped_column(String(128))
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    webhook_url_ciphertext: Mapped[bytes] = mapped_column(LargeBinary)
+    webhook_url_nonce: Mapped[bytes] = mapped_column(LargeBinary)
+    key_version: Mapped[str] = mapped_column(String(32))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class InvestigationRunRow(Base):

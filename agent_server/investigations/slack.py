@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -98,6 +97,22 @@ def _limit_message(message: str, limit: int = SLACK_LIMIT) -> str:
     return message[: limit - len(marker)] + marker
 
 
+def build_test_briefing(display_name: str) -> str:
+    """Render a small, redacted message used to verify a saved webhook."""
+
+    return _limit_message(
+        redact_text(
+            "\n".join(
+                [
+                    f"*DevOps Agent integration test: {display_name}*",
+                    "This message confirms the Slack integration is configured correctly.",
+                    "READ-ONLY test. No actions were taken.",
+                ]
+            )
+        )
+    )
+
+
 class SlackDeliveryError(RuntimeError):
     pass
 
@@ -105,13 +120,13 @@ class SlackDeliveryError(RuntimeError):
 class SlackPoster:
     def __init__(
         self,
-        webhook_url: str | None = None,
+        webhook_url: str,
         *,
         client_factory: Callable[[], Any] | None = None,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         max_attempts: int = 4,
     ) -> None:
-        self.webhook_url = webhook_url if webhook_url is not None else os.getenv("SLACK_WEBHOOK_URL")
+        self.webhook_url = webhook_url
         self.client_factory = client_factory
         self.sleep = sleep
         self.max_attempts = max_attempts
@@ -139,6 +154,9 @@ class SlackPoster:
     async def post_text(self, message: str) -> bool:
         """Deliver an already-rendered, redacted briefing with retry policy."""
 
+        if not self.webhook_url:
+            logger.info("Slack webhook is unset; message was not delivered")
+            return False
         client = self.client_factory() if self.client_factory else httpx.AsyncClient(timeout=10)
         owns_client = self.client_factory is None
         try:
@@ -165,4 +183,5 @@ __all__ = [
     "SlackPoster",
     "build_analyzed_briefing",
     "build_deterministic_briefing",
+    "build_test_briefing",
 ]

@@ -80,6 +80,12 @@ DOCS = (
         "title": "Connect Alertmanager",
         "file": "alertmanager.md",
     },
+    {
+        "slug": "investigations/slack",
+        "group": "Investigation",
+        "title": "Connect Slack",
+        "file": "slack.md",
+    },
 )
 
 
