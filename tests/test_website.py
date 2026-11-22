@@ -56,6 +56,10 @@ def test_landing_page_is_public_and_contains_product_message():
     assert "Turn alerts into evidence-backed decisions" in response.text
     assert "/login" in response.text
     assert "Sign in" in response.text
+    assert response.text.count('aria-label="Primary navigation"') == 1
+    assert 'href="/docs/cli"' in response.text
+    primary_nav = response.text.split('<nav class="ui-site-links"', 1)[1].split("</nav>", 1)[0]
+    assert 'href="#how"' not in primary_nav
     assert "The CLI advantage" in response.text
     assert "Less context switching" in response.text
     assert 'href="/static/app.css"' in response.text
@@ -74,6 +78,9 @@ def test_documentation_is_repository_backed_and_navigable():
     assert "Previous" in response.text
     assert "CLI" in response.text
     assert "Investigation" in response.text
+    assert response.text.count('aria-label="Primary navigation"') == 1
+    assert 'href="/docs/cli"' in response.text
+    assert 'href="/"' in response.text
 
 
 def test_runtime_image_includes_repository_documentation():
@@ -94,6 +101,7 @@ def test_tailwind_stylesheet_is_served_and_contains_shared_components():
     assert response.status_code == 200
     assert ".ui-button" in response.text
     assert ".ui-input" in response.text
+    assert ".ui-site-header" in response.text
 
 
 def test_authenticated_landing_page_shows_account_link_instead_of_sign_in():

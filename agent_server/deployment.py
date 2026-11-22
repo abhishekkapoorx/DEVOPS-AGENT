@@ -11,12 +11,12 @@ from urllib.parse import urlsplit
 
 from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
 
 from agent_core import AgentRequest, AgentResponse
 from agent_server.accounts import AccountAlreadyExists, AccountError, LocalAccountService
 from agent_server.api.app import create_app
 from agent_server.auth_sessions import AuthSessionService
+from agent_server.web_templates import create_site_templates
 from agent_server.conversation_titles import ModelConversationTitleGenerator
 from agent_server.development_auth import InProcessDeviceApprovalProvider
 from agent_server.langgraph_runtime import postgres_runtime
@@ -167,12 +167,17 @@ def create_api_from_environment() -> FastAPI:
     if is_local_auth:
         _mount_local_account_approval(app, provider, account_service, auth)
     else:
-        _mount_development_approval(app, provider, settings)
+        _mount_development_approval(app, provider, settings, auth)
     return app
 
 
-def _mount_development_approval(app: FastAPI, provider: InProcessDeviceApprovalProvider, settings: Settings) -> None:
-    templates = Jinja2Templates(directory=Path(__file__).with_name("templates"))
+def _mount_development_approval(
+    app: FastAPI,
+    provider: InProcessDeviceApprovalProvider,
+    settings: Settings,
+    auth_service: AuthSessionService | None = None,
+) -> None:
+    templates = create_site_templates(Path(__file__).with_name("templates"), auth_service)
 
     @app.get("/v1/development/device/{approval_id}", response_class=HTMLResponse, include_in_schema=False)
     async def development_device_page(request: Request, approval_id: str):
@@ -214,7 +219,7 @@ def _mount_local_account_approval(
     accounts: LocalAccountService,
     auth_service: AuthSessionService | None = None,
 ) -> None:
-    templates = Jinja2Templates(directory=Path(__file__).with_name("templates"))
+    templates = create_site_templates(Path(__file__).with_name("templates"), auth_service)
 
     def render_form(request: Request, approval_id: str, user_code: str, mode: str, message: str = ""):
         page_url = request.url_for("local_account_page", approval_id=approval_id)

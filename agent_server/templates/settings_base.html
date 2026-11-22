@@ -2,15 +2,6 @@
 {% block body_class %}block p-0{% endblock %}
 {% block content %}
 <div class="mx-auto w-[min(1180px,calc(100%-40px))] max-tablet:w-[min(680px,calc(100%-32px))]">
-  <header class="flex min-h-[82px] items-center justify-between border-b border-border-subtle max-tablet:flex-col max-tablet:items-start max-tablet:gap-3.5 max-tablet:py-5">
-    <a class="font-semibold text-ink no-underline" href="/">DevOps Agent <span class="ml-2 font-sans text-[11px] font-medium tracking-[0.08em] text-quiet uppercase">control plane</span></a>
-    <nav class="flex items-center gap-5 text-sm [&_a]:text-muted [&_a]:no-underline [&_a:hover]:text-brand-hover max-tablet:w-full max-tablet:justify-between" aria-label="Primary navigation">
-      <a href="/settings">Settings</a>
-      <a href="/investigations">Investigations</a>
-      <a href="/account">Account</a>
-      <a href="/docs/cli">Docs</a>
-    </nav>
-  </header>
   <div class="grid grid-cols-[230px_minmax(0,1fr)] gap-12 py-12 pb-16 max-tablet:grid-cols-1 max-tablet:gap-6 max-tablet:py-7 max-tablet:pb-11">
     <aside class="sticky top-6 self-start max-tablet:static" aria-label="Settings navigation">
       <p class="mb-3 font-mono text-[11px] leading-[1.4] font-semibold tracking-[0.1em] text-quiet uppercase">Workspace</p>

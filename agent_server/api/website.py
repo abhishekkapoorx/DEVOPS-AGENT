@@ -5,13 +5,13 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastapi import APIRouter, Form, HTTPException, Request, status
+from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
 
 from agent_server.accounts import AccountError, LocalAccountService
 from agent_server.auth_sessions import AuthSessionService
 from agent_server.docs import DOCS, load_doc
-from fastapi.responses import RedirectResponse
+from agent_server.web_templates import create_site_templates
 
 
 def create_website_router(
@@ -21,7 +21,7 @@ def create_website_router(
     auth_service: AuthSessionService | None = None,
 ) -> APIRouter:
     router = APIRouter()
-    templates = Jinja2Templates(directory=template_dir)
+    templates = create_site_templates(template_dir, auth_service)
     docs_dir = template_dir.parent.parent / "docs" / "website"
     static_files = StaticFiles(directory=template_dir.parent / "static")
 

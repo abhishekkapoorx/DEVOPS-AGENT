@@ -9,18 +9,18 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Form, Header, HTTPException, Request, status
 from fastapi.responses import RedirectResponse, Response
-from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from agent_server.auth_sessions import AuthSessionService, AuthenticatedUser
 from agent_server.alertmanager_manifests import helm_values, kustomize_bundle, operator_manifest
+from agent_server.auth_sessions import AuthSessionService, AuthenticatedUser
 from agent_server.persistence.postgres import (
     AlertRow,
     InvestigationEvidenceRow,
     InvestigationRow,
 )
 from agent_server.persistence.secrets import SecretRepository, mask_secret
+from agent_server.web_templates import create_site_templates
 
 
 def _alertmanager_config(secret: str, endpoint: str = "${DEVOPS_AGENT_PUBLIC_BASE_URL}/webhook/alertmanager") -> str:
@@ -51,7 +51,7 @@ def create_settings_router(
     template_dir: Path,
 ) -> APIRouter:
     router = APIRouter()
-    templates = Jinja2Templates(directory=template_dir)
+    templates = create_site_templates(template_dir, auth_service)
     manifest_artifacts: dict[str, tuple[str, str, str]] = {}
 
     def webhook_endpoint(request: Request) -> str:

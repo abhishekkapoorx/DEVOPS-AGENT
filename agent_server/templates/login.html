@@ -5,8 +5,9 @@
   <title>{{ "Create account" if mode == "signup" else "Sign in" }} | DevOps Agent</title>
   <link rel="stylesheet" href="/static/app.css">
 </head>
-<body class="grid min-h-screen place-items-center bg-[image:radial-gradient(circle_at_50%_0%,#1b3158,transparent_32rem)] bg-marketing-bg p-5 font-sans text-[15px] leading-[1.5] text-marketing-ink">
-<main class="w-full max-w-[460px] rounded-[18px] border border-marketing-line bg-[#111827ee] p-8 shadow-[0_30px_90px_#0008]">
+<body class="m-0 flex min-h-screen flex-col bg-[image:radial-gradient(circle_at_50%_0%,#1b3158,transparent_32rem)] bg-marketing-bg p-0 font-sans text-[15px] leading-[1.5] text-marketing-ink">
+{% include "site_nav.html" %}
+<main class="my-auto mx-auto w-[calc(100%-40px)] max-w-[460px] rounded-[18px] border border-marketing-line bg-[#111827ee] p-8 shadow-[0_30px_90px_#0008]">
   <p class="text-marketing-muted">DevOps Agent / Website account</p>
   <h1 class="mb-2 text-3xl font-semibold tracking-normal">{{ "Create your account" if mode == "signup" else "Welcome back" }}</h1>
   <p class="text-marketing-muted">Use the website account directly. This route is separate from the CLI device login flow.</p>

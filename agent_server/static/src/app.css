@@ -68,8 +68,32 @@
 }
 
 @layer components {
+  .ui-site-header {
+    @apply w-full border-b border-border-subtle;
+  }
+
+  .ui-site-header-inner {
+    @apply mx-auto flex min-h-20 w-[min(1240px,calc(100%-48px))] items-center justify-between gap-6 max-tablet:w-[min(680px,calc(100%-32px))] max-tablet:flex-col max-tablet:items-start max-tablet:gap-3.5 max-tablet:py-4;
+  }
+
+  .ui-site-brand {
+    @apply flex flex-none items-center gap-2.5 text-base font-semibold text-ink no-underline;
+  }
+
+  .ui-site-mark {
+    @apply grid size-8 place-items-center border border-brand/50 bg-brand-soft font-mono text-[11px] font-semibold text-brand-hover;
+  }
+
+  .ui-site-links {
+    @apply flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px] max-tablet:w-full max-tablet:justify-between max-mobile:justify-start max-mobile:gap-x-4;
+  }
+
+  .ui-site-link {
+    @apply text-muted no-underline transition-colors hover:text-ink aria-[current=page]:text-brand-hover;
+  }
+
   .ui-page-card {
-    @apply w-full max-w-[420px] border border-border-subtle bg-surface p-6;
+    @apply mx-auto my-auto w-full max-w-[420px] border border-border-subtle bg-surface p-6;
   }
 
   .ui-page-card-wide {

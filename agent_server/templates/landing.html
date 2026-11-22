@@ -8,11 +8,8 @@
   <link rel="stylesheet" href="/static/app.css">
 </head>
 <body class="m-0 block bg-[image:radial-gradient(circle_at_70%_0%,#1b3158,transparent_34rem)] bg-marketing-bg font-sans text-[15px] leading-[1.6] text-marketing-ink">
+  {% include "site_nav.html" %}
   <div class="mx-auto w-[min(1160px,calc(100%-40px))]">
-    <nav class="flex items-center justify-between py-6">
-      <a class="flex items-center gap-2.5 font-bold text-marketing-ink no-underline" href="/"><span class="grid size-[30px] place-items-center rounded-[9px] border border-[#6d9cff] bg-[linear-gradient(135deg,#396fe0,#6ce3c0)] text-[#dce8ff] shadow-[0_0_28px_#4177d955]">✦</span> DevOps Agent</a>
-      <div class="flex gap-[22px] text-sm text-marketing-muted max-tablet:hidden"><a class="no-underline hover:text-marketing-ink" href="#cli">CLI</a><a class="no-underline hover:text-marketing-ink" href="#how">How it works</a><a class="no-underline hover:text-marketing-ink" href="#trust">Trust model</a>{% if authenticated %}<a class="inline-flex items-center gap-[7px] text-marketing-ink no-underline" href="/account"><span class="inline-grid size-[22px] place-items-center rounded-full border border-[#6d9cff] text-[15px] leading-none text-marketing-blue" aria-hidden="true">⌾</span> Account</a>{% else %}<a class="no-underline hover:text-marketing-ink" href="/login">Sign in</a>{% endif %}</div>
-    </nav>
     <section class="grid min-h-[620px] grid-cols-[1.08fr_0.92fr] items-center gap-[70px] py-[58px] pb-[90px] max-tablet:grid-cols-1 max-tablet:gap-[35px] max-tablet:pt-[35px]">
       <div>
         <div class="font-mono text-xs leading-[1.2] font-bold tracking-[0.14em] text-marketing-mint uppercase">Read-only incident intelligence</div>

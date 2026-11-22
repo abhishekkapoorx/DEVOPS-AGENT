@@ -68,6 +68,7 @@ def test_settings_page_generates_one_time_webhook_secret():
     assert "credentials: whsec_once" in response.text
     assert 'href="/investigations"' in response.text
     assert "Workspace" in response.text
+    assert response.text.count('aria-label="Primary navigation"') == 1
     assert store.webhooks[0].name == "kind-alertmanager"
 
 
